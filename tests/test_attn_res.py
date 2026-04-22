@@ -11,13 +11,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models.attn_res import FullAttnResOp, BlockAttnResOp, AttnResTransformerLayer
-
+from models.attn_res import AttnResTransformerLayer, BlockAttnResOp, FullAttnResOp
 
 B, T, D = 2, 8, 64  # batch, seq_len, dim
 

@@ -17,14 +17,12 @@ Usage::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 from dataset.base_dataset import BaseDataset
-
 
 # ---------------------------------------------------------------------------
 # MNIST
@@ -69,7 +67,7 @@ class MNISTDataset(BaseDataset):
         self,
         root: str,
         train: bool = True,
-        transform: Optional[Any] = None,
+        transform: Any | None = None,
         augment: bool = False,
     ) -> None:
         if transform is None:
@@ -186,7 +184,7 @@ class CIFAR10Dataset(BaseDataset):
         self,
         root: str,
         train: bool = True,
-        transform: Optional[Any] = None,
+        transform: Any | None = None,
         augment: bool = False,
     ) -> None:
         if transform is None:

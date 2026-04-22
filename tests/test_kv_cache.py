@@ -14,40 +14,46 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models.components import KVCache, CausalSelfAttention, RotaryEmbedding
+from models.components import CausalSelfAttention, KVCache, RotaryEmbedding
 from models.lm_transformer import AttnResLM, BaselineLM
 from utils.config import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
+
 def _lm_cfg(use_kv_cache: bool = False, use_block: bool = True) -> ModelConfig:
     """Minimal ModelConfig for fast CPU tests."""
     return ModelConfig(
         name="TestLM",
-        dim=32, depth=2, heads=2, head_dim=16,
-        mlp_multiplier=2, dropout=0.0,
-        use_block_attn_res=use_block, block_size=2,
-        norm_eps=1e-6, max_seq_len=64,
+        dim=32,
+        depth=2,
+        heads=2,
+        head_dim=16,
+        mlp_multiplier=2,
+        dropout=0.0,
+        use_block_attn_res=use_block,
+        block_size=2,
+        norm_eps=1e-6,
+        max_seq_len=64,
         use_kv_cache=use_kv_cache,
     )
 
 
 VOCAB = 67
-SEQ   = 32
-B, T  = 2, 8
+SEQ = 32
+B, T = 2, 8
 
 
 # ---------------------------------------------------------------------------
 # KVCache dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestKVCache:
     """Tests for the KVCache dataclass."""
@@ -113,6 +119,7 @@ class TestKVCache:
 # RotaryEmbedding with offset
 # ---------------------------------------------------------------------------
 
+
 class TestRotaryEmbeddingOffset:
     """Tests for RoPE positional offset (used during cached generation)."""
 
@@ -151,6 +158,7 @@ class TestRotaryEmbeddingOffset:
 # CausalSelfAttention with KV cache
 # ---------------------------------------------------------------------------
 
+
 class TestCausalSelfAttentionKVCache:
     """Tests for CausalSelfAttention KV-cache path."""
 
@@ -159,7 +167,7 @@ class TestCausalSelfAttentionKVCache:
 
     def test_cached_output_shape_single_token(self):
         """Cached forward with T=1 must return shape (B, 1, dim)."""
-        attn  = self._make_attn()
+        attn = self._make_attn()
         cache = KVCache()
         x = torch.randn(2, 1, 64)
         out = attn(x, kv_cache=cache)
@@ -167,7 +175,7 @@ class TestCausalSelfAttentionKVCache:
 
     def test_cache_grows_each_step(self):
         """Cache length must increment by T_new on each forward call."""
-        attn  = self._make_attn()
+        attn = self._make_attn()
         cache = KVCache()
         assert cache.length == 0
         attn(torch.randn(1, 3, 64), kv_cache=cache)
@@ -181,7 +189,7 @@ class TestCausalSelfAttentionKVCache:
         attn.eval()
         x = torch.randn(1, 6, 64)
         with torch.no_grad():
-            out_none  = attn(x, kv_cache=None)
+            out_none = attn(x, kv_cache=None)
             out_noarg = attn(x)
         assert torch.allclose(out_none, out_noarg)
 
@@ -200,12 +208,13 @@ class TestCausalSelfAttentionKVCache:
 
             # Cached: prefill tokens 0..T-2, then query token T-1
             cache = KVCache()
-            attn(x[:, :T-1, :], kv_cache=cache)          # prefill
-            cached_last = attn(x[:, T-1:, :], kv_cache=cache)  # single token
+            attn(x[:, : T - 1, :], kv_cache=cache)  # prefill
+            cached_last = attn(x[:, T - 1 :, :], kv_cache=cache)  # single token
 
         # Last-position outputs should agree closely
-        assert torch.allclose(ref_out[:, -1:, :], cached_last, atol=1e-4), \
-            f"max diff = {(ref_out[:, -1:, :] - cached_last).abs().max():.6f}"
+        assert torch.allclose(
+            ref_out[:, -1:, :], cached_last, atol=1e-4
+        ), f"max diff = {(ref_out[:, -1:, :] - cached_last).abs().max():.6f}"
 
     def test_cached_does_not_affect_training_path(self):
         """Training path (kv_cache=None) must be gradient-compatible."""
@@ -217,7 +226,7 @@ class TestCausalSelfAttentionKVCache:
     def test_no_cache_used_during_training(self):
         """Passing kv_cache to a training-mode forward must not affect gradients
         on the input — both paths must remain differentiable."""
-        attn  = self._make_attn()
+        attn = self._make_attn()
         cache = KVCache()
         x = torch.randn(1, 4, 64, requires_grad=True)
         # KV cache is silently fine during backward (tensors stored but not differentiated).
@@ -229,12 +238,16 @@ class TestCausalSelfAttentionKVCache:
 # AttnResLM cached vs uncached generation
 # ---------------------------------------------------------------------------
 
+
 class TestAttnResLMKVCache:
     """Tests for AttnResLM KV-cache generation (Block and Full AttnRes)."""
 
     def _make_model(self, use_kv_cache: bool, use_block: bool = True) -> AttnResLM:
-        return AttnResLM(_lm_cfg(use_kv_cache=use_kv_cache, use_block=use_block),
-                         vocab_size=VOCAB, seq_len=SEQ)
+        return AttnResLM(
+            _lm_cfg(use_kv_cache=use_kv_cache, use_block=use_block),
+            vocab_size=VOCAB,
+            seq_len=SEQ,
+        )
 
     def test_cached_output_length_block(self):
         """Block AttnRes: cached generate must return prompt + max_new_tokens."""
@@ -270,7 +283,7 @@ class TestAttnResLMKVCache:
         # Config says no cache, but we override to True
         model = self._make_model(use_kv_cache=False)
         prompt = torch.randint(0, VOCAB, (1, 4))
-        out_cached   = model.generate(prompt, max_new_tokens=5, use_kv_cache=True)
+        out_cached = model.generate(prompt, max_new_tokens=5, use_kv_cache=True)
         out_uncached = model.generate(prompt, max_new_tokens=5, use_kv_cache=False)
         assert out_cached.shape == out_uncached.shape == (1, 9)
 
@@ -304,15 +317,18 @@ class TestAttnResLMKVCache:
         prompt = torch.randint(0, VOCAB, (1, 5))
 
         torch.manual_seed(0)
-        out_uncached = model.generate(prompt.clone(), max_new_tokens=8,
-                                      temperature=1e-9, use_kv_cache=False)
+        out_uncached = model.generate(
+            prompt.clone(), max_new_tokens=8, temperature=1e-9, use_kv_cache=False
+        )
         torch.manual_seed(0)
-        out_cached   = model.generate(prompt.clone(), max_new_tokens=8,
-                                      temperature=1e-9, use_kv_cache=True)
+        out_cached = model.generate(
+            prompt.clone(), max_new_tokens=8, temperature=1e-9, use_kv_cache=True
+        )
 
         # Prompt tokens must be identical in both outputs
-        assert torch.all(out_uncached[:, :5] == out_cached[:, :5]), \
-            "Prompt tokens differ between cached and uncached paths"
+        assert torch.all(
+            out_uncached[:, :5] == out_cached[:, :5]
+        ), "Prompt tokens differ between cached and uncached paths"
 
         # Both outputs must have the correct total length
         assert out_uncached.shape == out_cached.shape == (1, 13)
@@ -336,11 +352,14 @@ class TestAttnResLMKVCache:
 # BaselineLM cached generation
 # ---------------------------------------------------------------------------
 
+
 class TestBaselineLMKVCache:
     """Tests for BaselineLM KV-cache generation."""
 
     def _make_model(self, use_kv_cache: bool) -> BaselineLM:
-        return BaselineLM(_lm_cfg(use_kv_cache=use_kv_cache), vocab_size=VOCAB, seq_len=SEQ)
+        return BaselineLM(
+            _lm_cfg(use_kv_cache=use_kv_cache), vocab_size=VOCAB, seq_len=SEQ
+        )
 
     def test_cached_output_length(self):
         """Cached BaselineLM generate must return prompt + max_new_tokens."""
@@ -364,17 +383,20 @@ class TestBaselineLMKVCache:
         prompt = torch.randint(0, VOCAB, (1, 4))
 
         torch.manual_seed(1)
-        out_uncached = model.generate(prompt.clone(), max_new_tokens=6,
-                                      temperature=1e-9, use_kv_cache=False)
+        out_uncached = model.generate(
+            prompt.clone(), max_new_tokens=6, temperature=1e-9, use_kv_cache=False
+        )
         torch.manual_seed(1)
-        out_cached   = model.generate(prompt.clone(), max_new_tokens=6,
-                                      temperature=1e-9, use_kv_cache=True)
+        out_cached = model.generate(
+            prompt.clone(), max_new_tokens=6, temperature=1e-9, use_kv_cache=True
+        )
         assert torch.all(out_uncached == out_cached)
 
 
 # ---------------------------------------------------------------------------
 # Config flag integration
 # ---------------------------------------------------------------------------
+
 
 class TestKVCacheConfigFlag:
     """Tests that use_kv_cache in ModelConfig is wired correctly."""
@@ -392,6 +414,7 @@ class TestKVCacheConfigFlag:
     def test_serialises_in_to_dict(self):
         """use_kv_cache must appear in the to_dict() output for checkpointing."""
         from utils.config import Config
+
         cfg = Config(model=ModelConfig(use_kv_cache=True))
         d = cfg.to_dict()
         assert "use_kv_cache" in d["model"]
@@ -400,6 +423,7 @@ class TestKVCacheConfigFlag:
     def test_yaml_override_sets_flag(self, tmp_path):
         """CLI override 'model.use_kv_cache=true' must work through load_config."""
         from utils.config import load_config
+
         yaml_path = tmp_path / "test.yaml"
         yaml_path.write_text(
             "model:\n  use_kv_cache: false\n"

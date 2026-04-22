@@ -137,7 +137,7 @@ class CharTokenizer:
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
 
     @classmethod
-    def load(cls, path: str | Path) -> "CharTokenizer":
+    def load(cls, path: str | Path) -> CharTokenizer:
         """Deserialise a tokeniser from a JSON file created by :meth:`save`.
 
         Args:
@@ -163,7 +163,7 @@ class CharTokenizer:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_text(cls, text: str) -> "CharTokenizer":
+    def from_text(cls, text: str) -> CharTokenizer:
         """Build a vocabulary from a raw text string.
 
         Args:

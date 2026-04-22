@@ -24,7 +24,7 @@ Usage::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -61,7 +61,7 @@ class CheckpointManager:
         self,
         model: nn.Module,
         optimizer: Optimizer,
-        scheduler: Optional[LRScheduler],
+        scheduler: LRScheduler | None,
         epoch: int,
         step: int,
         val_loss: float,
@@ -108,10 +108,10 @@ class CheckpointManager:
     def load(
         self,
         model: nn.Module,
-        optimizer: Optional[Optimizer] = None,
-        scheduler: Optional[LRScheduler] = None,
-        path: Optional[str | Path] = None,
-        device: Optional[torch.device] = None,
+        optimizer: Optimizer | None = None,
+        scheduler: LRScheduler | None = None,
+        path: str | Path | None = None,
+        device: torch.device | None = None,
     ) -> tuple[int, int]:
         """Load a checkpoint into *model* (and optionally optimiser/scheduler).
 

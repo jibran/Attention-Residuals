@@ -34,21 +34,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
-from torch.utils.data import DataLoader
 
 from dataset.shakespeare_dataset import ShakespeareDataset
 from dataset.tokenizer import CharTokenizer
 from models.lm_transformer import AttnResLM, BaselineLM
 from utils.config import (
     Config,
+    DataConfig,
+    GenerationConfig,
+    LoggingConfig,
     ModelConfig,
     TrainingConfig,
-    DataConfig,
-    LoggingConfig,
-    GenerationConfig,
 )
 from utils.device import resolve_device
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -194,7 +192,8 @@ def main() -> None:
     epoch = ckpt.get("epoch", "?")
     val_loss = ckpt.get("val_loss", float("nan"))
     print(
-        f"Loaded checkpoint — epoch {epoch}  val_loss {val_loss:.4f}  ppl {math.exp(min(val_loss, 20)):.1f}"
+        f"Loaded checkpoint — epoch {epoch}  val_loss {val_loss:.4f}"
+        f"  ppl {math.exp(min(val_loss, 20)):.1f}"
     )
     print(f"Vocab size: {tok.vocab_size}  |  Params: {model.num_parameters:,}\n")
 

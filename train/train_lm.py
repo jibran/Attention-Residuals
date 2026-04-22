@@ -56,7 +56,6 @@ from utils import (
 )
 from utils.config import Config
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -198,7 +197,9 @@ def train_lm(
 
     model_name = "BaselineLM" if baseline else cfg.model.name
     print(
-        f"Model: {model_name}  |  params: {model.num_parameters:,}  |  vocab: {tokenizer.vocab_size}"
+        f"Model: {model_name}  |  "
+        f"params: {model.num_parameters:,}  |  "
+        f"vocab: {tokenizer.vocab_size}"
     )
 
     # ------------------------------------------------- Optimiser + scheduler

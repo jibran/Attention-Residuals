@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -21,12 +20,11 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from dataset.tokenizer import CharTokenizer
 from dataset.shakespeare_dataset import _WindowDataset
-from models.lm_transformer import AttnResLM, BaselineLM
+from dataset.tokenizer import CharTokenizer
 from models import build_lm
-from utils.config import ModelConfig, Config, GenerationConfig
-
+from models.lm_transformer import AttnResLM, BaselineLM
+from utils.config import Config, GenerationConfig, ModelConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures

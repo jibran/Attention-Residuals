@@ -24,14 +24,10 @@ https://arxiv.org/abs/2603.15031
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from models.components import RMSNorm, CausalSelfAttention, SwiGLU, KVCache
-
+from models.components import CausalSelfAttention, KVCache, RMSNorm, SwiGLU
 
 # ---------------------------------------------------------------------------
 # Full Attention Residuals operation
@@ -221,7 +217,7 @@ class AttnResTransformerLayer(nn.Module):
     def forward_full(
         self,
         layer_outputs: list[torch.Tensor],
-        kv_cache: Optional[KVCache] = None,
+        kv_cache: KVCache | None = None,
     ) -> list[torch.Tensor]:
         """Full AttnRes forward pass.
 
@@ -259,7 +255,7 @@ class AttnResTransformerLayer(nn.Module):
         self,
         block_reps: list[torch.Tensor],
         partial_block: torch.Tensor,
-        kv_cache: Optional[KVCache] = None,
+        kv_cache: KVCache | None = None,
     ) -> tuple[list[torch.Tensor], torch.Tensor]:
         """Block AttnRes forward pass.
 
@@ -307,7 +303,7 @@ class AttnResTransformerLayer(nn.Module):
     # Unified forward
     # ------------------------------------------------------------------
 
-    def forward(self, *args, kv_cache: Optional[KVCache] = None):
+    def forward(self, *args, kv_cache: KVCache | None = None):
         """Route to full or block forward depending on construction.
 
         For Full AttnRes pass a single list ``layer_outputs``.

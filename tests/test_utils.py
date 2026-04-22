@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import csv
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -19,11 +18,10 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from utils.config import load_config, Config, ModelConfig
-from utils.logger import TrainingLogger
 from utils.checkpoint import CheckpointManager
+from utils.config import Config, load_config
 from utils.device import resolve_device, seed_everything
-
+from utils.logger import TrainingLogger
 
 # ---------------------------------------------------------------------------
 # Fixtures

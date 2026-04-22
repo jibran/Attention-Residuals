@@ -50,16 +50,13 @@ the training loop).
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from models.attn_res import AttnResTransformerLayer
-from models.components import RMSNorm, CausalSelfAttention, SwiGLU, KVCache
+from models.components import CausalSelfAttention, KVCache, RMSNorm, SwiGLU
 from utils.config import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # AttnRes Language Model
@@ -155,7 +152,7 @@ class AttnResLM(nn.Module):
     def _run_layers(
         self,
         h: torch.Tensor,
-        kv_caches: Optional[list[KVCache]] = None,
+        kv_caches: list[KVCache] | None = None,
     ) -> torch.Tensor:
         """Run all transformer layers and aggregate their outputs.
 
@@ -188,9 +185,9 @@ class AttnResLM(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        kv_caches: Optional[list[KVCache]] = None,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        targets: torch.Tensor | None = None,
+        kv_caches: list[KVCache] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Run the forward pass.
 
         During training call without ``kv_caches`` (the default).  During
@@ -249,8 +246,8 @@ class AttnResLM(nn.Module):
         prompt_ids: torch.Tensor,
         max_new_tokens: int = 200,
         temperature: float = 1.0,
-        top_k: Optional[int] = None,
-        use_kv_cache: Optional[bool] = None,
+        top_k: int | None = None,
+        use_kv_cache: bool | None = None,
     ) -> torch.Tensor:
         """Autoregressively generate new tokens from a prompt.
 
@@ -300,7 +297,7 @@ class AttnResLM(nn.Module):
     def _sample(
         logits: torch.Tensor,
         temperature: float,
-        top_k: Optional[int],
+        top_k: int | None,
     ) -> torch.Tensor:
         """Sample the next token id from logits.
 
@@ -406,9 +403,9 @@ class BaselineLM(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        targets: Optional[torch.Tensor] = None,
-        kv_caches: Optional[list[KVCache]] = None,
-    ) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        targets: torch.Tensor | None = None,
+        kv_caches: list[KVCache] | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Run the baseline LM forward pass.
 
         Args:
@@ -442,8 +439,8 @@ class BaselineLM(nn.Module):
         prompt_ids: torch.Tensor,
         max_new_tokens: int = 200,
         temperature: float = 1.0,
-        top_k: Optional[int] = None,
-        use_kv_cache: Optional[bool] = None,
+        top_k: int | None = None,
+        use_kv_cache: bool | None = None,
     ) -> torch.Tensor:
         """Autoregressively generate new tokens.
 
@@ -527,7 +524,7 @@ class _BaselineLMLayer(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        kv_cache: Optional[KVCache] = None,
+        kv_cache: KVCache | None = None,
     ) -> torch.Tensor:
         """Apply attention and MLP with standard residuals.
 

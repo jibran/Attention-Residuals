@@ -14,11 +14,11 @@ Example::
 from __future__ import annotations
 
 import copy
-import yaml
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
 
 # ---------------------------------------------------------------------------
 # Section dataclasses

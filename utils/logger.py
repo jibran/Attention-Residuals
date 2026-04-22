@@ -22,12 +22,11 @@ import csv
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 try:
+    from rich import box as rich_box
     from rich.console import Console
     from rich.table import Table
-    from rich import box as rich_box
 
     _RICH = True
 except ImportError:

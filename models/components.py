@@ -15,12 +15,9 @@ framework-agnostic beyond requiring PyTorch >= 2.0.
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 # ---------------------------------------------------------------------------
 # RMSNorm
@@ -83,7 +80,7 @@ class SwiGLU(nn.Module):
     def __init__(
         self,
         dim: int,
-        hidden_dim: Optional[int] = None,
+        hidden_dim: int | None = None,
         dropout: float = 0.0,
     ) -> None:
         super().__init__()
@@ -224,8 +221,8 @@ class KVCache:
     """
 
     def __init__(self) -> None:
-        self.k_cache: Optional[torch.Tensor] = None
-        self.v_cache: Optional[torch.Tensor] = None
+        self.k_cache: torch.Tensor | None = None
+        self.v_cache: torch.Tensor | None = None
 
     # ------------------------------------------------------------------
     # Properties
@@ -341,7 +338,7 @@ class CausalSelfAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        kv_cache: Optional[KVCache] = None,
+        kv_cache: KVCache | None = None,
     ) -> torch.Tensor:
         """Compute causal self-attention, optionally with a KV cache.
 

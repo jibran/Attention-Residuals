@@ -20,15 +20,12 @@ Two public model classes are provided:
 
 from __future__ import annotations
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
 from models.attn_res import AttnResTransformerLayer
-from models.components import RMSNorm, CausalSelfAttention, SwiGLU
+from models.components import CausalSelfAttention, RMSNorm, SwiGLU
 from utils.config import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Patch embedding

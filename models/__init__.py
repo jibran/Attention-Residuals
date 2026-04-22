@@ -1,10 +1,9 @@
 """Model definitions for AttnRes experiments."""
 
-from models.components import RMSNorm, SwiGLU, RotaryEmbedding, CausalSelfAttention
-from models.attn_res import FullAttnResOp, BlockAttnResOp, AttnResTransformerLayer
-from models.transformer import AttnResTransformer, BaselineTransformer, PatchEmbedding
+from models.attn_res import AttnResTransformerLayer, BlockAttnResOp, FullAttnResOp
+from models.components import CausalSelfAttention, RMSNorm, RotaryEmbedding, SwiGLU
 from models.lm_transformer import AttnResLM, BaselineLM
-from utils.config import ModelConfig
+from models.transformer import AttnResTransformer, BaselineTransformer, PatchEmbedding
 
 
 def build_model(

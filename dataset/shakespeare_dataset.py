@@ -28,13 +28,11 @@ Usage::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from dataset.tokenizer import CharTokenizer
-
 
 # ---------------------------------------------------------------------------
 # Window dataset
@@ -59,7 +57,7 @@ class _WindowDataset(Dataset):
         self,
         tokens: torch.Tensor,
         seq_len: int,
-        stride: Optional[int] = None,
+        stride: int | None = None,
     ) -> None:
         self._tokens = tokens
         self._seq_len = seq_len
@@ -182,7 +180,7 @@ class ShakespeareDataset:
         cls,
         data_dir: str = "data/",
         seq_len: int = 256,
-        stride: Optional[int] = None,
+        stride: int | None = None,
         val_split: float = 0.1,
         batch_size: int = 64,
         num_workers: int = 4,

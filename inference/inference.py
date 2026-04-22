@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -42,9 +41,8 @@ from torchvision import transforms
 
 from dataset.image_datasets import get_dataset_class
 from models import build_model
-from utils.config import Config, ModelConfig, TrainingConfig, DataConfig, LoggingConfig
+from utils.config import Config, DataConfig, LoggingConfig, ModelConfig, TrainingConfig
 from utils.device import resolve_device
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -203,10 +201,6 @@ def evaluate_test_set(
     from torch.utils.data import DataLoader
 
     ds_cls = get_dataset_class(dataset)
-    ds_meta = {
-        "mnist": dict(img_size=28, in_channels=1),
-        "cifar10": dict(img_size=32, in_channels=3),
-    }[dataset]
 
     test_ds = ds_cls(root=data_dir, train=False, augment=False)
     loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=2)

@@ -10,7 +10,7 @@ Provides a standard :meth:`split` helper that returns train / validation
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import torch
 from torch.utils.data import DataLoader, Dataset, random_split
@@ -31,7 +31,7 @@ class BaseDataset(Dataset, ABC):
         self,
         root: str,
         train: bool = True,
-        transform: Optional[Any] = None,
+        transform: Any | None = None,
     ) -> None:
         self.root = root
         self.train = train
@@ -46,7 +46,7 @@ class BaseDataset(Dataset, ABC):
         """
 
     @abstractmethod
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, int]:
         """Return a single (image, label) pair.
 
         Args:
@@ -68,7 +68,7 @@ class BaseDataset(Dataset, ABC):
         num_workers: int = 4,
         pin_memory: bool = True,
         seed: int = 42,
-        test_dataset: Optional[Dataset] = None,
+        test_dataset: Dataset | None = None,
     ) -> dict[str, DataLoader]:
         """Split ``train_dataset`` into train/val and wrap in DataLoaders.
 

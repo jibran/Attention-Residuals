@@ -17,10 +17,9 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from models import build_model, AttnResTransformer, BaselineTransformer
+from models import AttnResTransformer, BaselineTransformer, build_model
 from models.transformer import PatchEmbedding
 from utils.config import ModelConfig
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
