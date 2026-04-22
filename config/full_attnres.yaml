@@ -1,0 +1,35 @@
+model:
+  name: "AttnResTransformer_Full"
+  dim: 256
+  depth: 8
+  heads: 4
+  head_dim: 64
+  mlp_multiplier: 4
+  dropout: 0.1
+  use_block_attn_res: false  # Full AttnRes — attends over ALL previous outputs
+  block_size: 4
+  norm_eps: 1.0e-6
+  max_seq_len: 512
+
+training:
+  epochs: 20
+  batch_size: 64
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  grad_clip: 1.0
+  warmup_steps: 200
+  log_every: 50
+  save_every: 1
+  seed: 42
+  device: "auto"
+
+data:
+  dataset: "mnist"
+  data_dir: "data/"
+  num_workers: 2
+  pin_memory: true
+  val_split: 0.1
+
+logging:
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"

@@ -1,0 +1,97 @@
+<svg width="100%" viewBox="0 0 680 680" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="340" y="26" text-anchor="middle" font-size="14" font-weight="600" fill="#3d3d3a">AttnResLM — character-level language model</text>
+  <text x="340" y="44" text-anchor="middle" font-size="11" fill="#5f5e5a">lm_transformer.py · Tiny-Shakespeare · next-token prediction</text>
+
+  <!-- ═══ Input tokens ═══ -->
+  <rect x="220" y="58" width="240" height="36" rx="8" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+  <text x="340" y="74" text-anchor="middle" font-size="11" fill="#5f5e5a">Input token ids</text>
+  <text x="340" y="88" text-anchor="middle" font-size="10" fill="#888780">(B, T)   T ≤ seq_len=256</text>
+
+  <line x1="340" y1="94" x2="340" y2="116" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- ═══ Embeddings ═══ -->
+  <rect x="100" y="118" width="480" height="52" rx="8" fill="#FAEEDA" stroke="#EF9F27" stroke-width="1"/>
+  <text x="340" y="138" text-anchor="middle" font-size="12" font-weight="600" fill="#854f0b">Embedding layer</text>
+  <text x="230" y="156" text-anchor="middle" font-size="10" fill="#854f0b">tok_embed(x)  (B, T, d)</text>
+  <text x="340" y="164" text-anchor="middle" font-size="14" fill="#888780">+</text>
+  <text x="460" y="156" text-anchor="middle" font-size="10" fill="#854f0b">pos_embed(0…T)  (T, d)</text>
+
+  <!-- weight-tie note -->
+  <text x="600" y="138" font-size="9" fill="#888780">weight tied</text>
+  <text x="600" y="150" font-size="9" fill="#888780">to head ↓</text>
+  <line x1="596" y1="152" x2="596" y2="620" stroke="#EF9F27" stroke-width="0.8" stroke-dasharray="4 3"/>
+  <line x1="596" y1="620" x2="510" y2="638" stroke="#EF9F27" stroke-width="0.8" marker-end="url(#arr)"/>
+
+  <line x1="340" y1="170" x2="340" y2="192" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- ═══ Repeated AttnRes layer ═══ -->
+  <rect x="40" y="194" width="600" height="296" rx="10" fill="#f8f7f3" stroke="#AFA9EC" stroke-width="1" stroke-dasharray="6 3"/>
+  <text x="340" y="214" text-anchor="middle" font-size="10" fill="#534AB7">× depth  (default 6 for Shakespeare config)</text>
+
+  <!-- BlockAttnResOp — Attn -->
+  <rect x="70" y="222" width="540" height="40" rx="6" fill="#EEEDFE" stroke="#7F77DD" stroke-width="1"/>
+  <text x="340" y="240" text-anchor="middle" font-size="11" font-weight="600" fill="#3c3489">BlockAttnResOp  (or FullAttnResOp)</text>
+  <text x="340" y="254" text-anchor="middle" font-size="9" fill="#534AB7">learned w_l queries block_reps + partial  →  h  (B, T, d)</text>
+
+  <line x1="340" y1="262" x2="340" y2="278" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- RMSNorm + CausalSelfAttention -->
+  <rect x="70" y="280" width="540" height="40" rx="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1"/>
+  <text x="340" y="298" text-anchor="middle" font-size="11" font-weight="600" fill="#085041">RMSNorm  →  CausalSelfAttention</text>
+  <text x="340" y="312" text-anchor="middle" font-size="9" fill="#0f6e56">QKV · RoPE · Flash Attn(is_causal=True) · out proj</text>
+
+  <line x1="340" y1="320" x2="340" y2="336" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- partial += attn -->
+  <rect x="70" y="338" width="540" height="24" rx="6" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="340" y="354" text-anchor="middle" font-size="10" fill="#444441">partial_block  +=  attn_out   [boundary: push block if needed]</text>
+
+  <line x1="340" y1="362" x2="340" y2="378" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- BlockAttnResOp — MLP -->
+  <rect x="70" y="380" width="540" height="36" rx="6" fill="#EEEDFE" stroke="#7F77DD" stroke-width="1"/>
+  <text x="340" y="397" text-anchor="middle" font-size="11" font-weight="600" fill="#3c3489">BlockAttnResOp  →  h  (B, T, d)</text>
+  <text x="340" y="409" text-anchor="middle" font-size="9" fill="#534AB7">second op before MLP — independent w_l</text>
+
+  <line x1="340" y1="416" x2="340" y2="432" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- RMSNorm + SwiGLU -->
+  <rect x="70" y="434" width="540" height="36" rx="6" fill="#E1F5EE" stroke="#1D9E75" stroke-width="1"/>
+  <text x="340" y="452" text-anchor="middle" font-size="11" font-weight="600" fill="#085041">RMSNorm  →  SwiGLU MLP</text>
+  <text x="340" y="466" text-anchor="middle" font-size="9" fill="#0f6e56">down( silu(gate(h)) ⊙ up(h) )   hidden = dim × 4</text>
+
+  <line x1="340" y1="490" x2="340" y2="508" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- Aggregate -->
+  <rect x="140" y="510" width="380" height="32" rx="6" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="340" y="524" text-anchor="middle" font-size="10" fill="#444441">sum(block_reps[1:], partial_block)  →  out  (B, T, d)</text>
+  <text x="340" y="538" text-anchor="middle" font-size="9" fill="#888780">all block summaries + remaining partial</text>
+
+  <line x1="340" y1="542" x2="340" y2="560" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- Final RMSNorm -->
+  <rect x="220" y="562" width="240" height="28" rx="6" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="340" y="576" text-anchor="middle" font-size="10" fill="#444441">RMSNorm  →  out  (B, T, d)</text>
+  <text x="340" y="586" text-anchor="middle" font-size="9" fill="#888780">applied per-position (not pooled)</text>
+
+  <line x1="340" y1="590" x2="340" y2="610" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- Output projection -->
+  <rect x="160" y="612" width="340" height="40" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1.5"/>
+  <text x="340" y="630" text-anchor="middle" font-size="12" font-weight="600" fill="#3c3489">Linear(d, vocab_size)  →  logits  (B, T, V)</text>
+  <text x="340" y="646" text-anchor="middle" font-size="9" fill="#534AB7">weight-tied with tok_embed  ·  cross-entropy loss over all positions</text>
+
+  <!-- Generate note -->
+  <rect x="40" y="660" width="380" height="18" rx="4" fill="#E1F5EE" stroke="#5DCAA5" stroke-width="0.5"/>
+  <text x="230" y="673" text-anchor="middle" font-size="9" fill="#085041">generate(): crop ctx → forward → sample last logit → append → repeat</text>
+
+  <rect x="440" y="660" width="200" height="18" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="540" y="673" text-anchor="middle" font-size="9" fill="#854f0b">temperature · top-k filtering</text>
+</svg>

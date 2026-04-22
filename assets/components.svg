@@ -1,0 +1,176 @@
+<svg width="100%" viewBox="0 0 680 580" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="340" y="26" text-anchor="middle" font-size="14" font-weight="600" fill="#3d3d3a">Building blocks — components.py</text>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- RMSNorm  (top-left) -->
+  <!-- ══════════════════════════════════════════════ -->
+  <rect x="20" y="44" width="300" height="230" rx="10" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+  <text x="30" y="64" font-size="12" font-weight="600" fill="#3c3489">RMSNorm</text>
+  <text x="30" y="80" font-size="10" fill="#5f5e5a">x / rms(x) · weight</text>
+
+  <!-- input box -->
+  <rect x="100" y="90" width="100" height="28" rx="4" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="150" y="109" text-anchor="middle" font-size="11" fill="#3c3489">x  (..., dim)</text>
+
+  <!-- arrow down -->
+  <line x1="150" y1="118" x2="150" y2="138" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- pow(2).mean(-1) -->
+  <rect x="80" y="140" width="140" height="28" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="150" y="159" text-anchor="middle" font-size="10" fill="#444441">pow(2).mean(-1).rsqrt()</text>
+
+  <!-- arrow -->
+  <line x1="150" y1="168" x2="150" y2="188" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- multiply -->
+  <rect x="80" y="190" width="140" height="28" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="150" y="209" text-anchor="middle" font-size="10" fill="#444441">x · rms · weight</text>
+
+  <!-- arrow -->
+  <line x1="150" y1="218" x2="150" y2="238" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- output -->
+  <rect x="100" y="240" width="100" height="28" rx="4" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="150" y="259" text-anchor="middle" font-size="11" fill="#3c3489">(..., dim)</text>
+
+  <!-- note -->
+  <text x="30" y="285" font-size="9" fill="#888780">No mean subtraction · learnable γ (weight)</text>
+  <text x="30" y="298" font-size="9" fill="#888780">No bias · numerically stable at depth</text>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- SwiGLU  (top-right) -->
+  <!-- ══════════════════════════════════════════════ -->
+  <rect x="360" y="44" width="300" height="230" rx="10" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+  <text x="370" y="64" font-size="12" font-weight="600" fill="#0f6e56">SwiGLU MLP</text>
+  <text x="370" y="80" font-size="10" fill="#5f5e5a">down( silu(gate(x)) ⊙ up(x) )</text>
+
+  <!-- input -->
+  <rect x="460" y="90" width="100" height="28" rx="4" fill="#E1F5EE" stroke="#5DCAA5" stroke-width="0.5"/>
+  <text x="510" y="109" text-anchor="middle" font-size="11" fill="#0f6e56">x  (B, T, dim)</text>
+
+  <!-- fork arrow left -->
+  <line x1="510" y1="118" x2="510" y2="128" stroke="#888780" stroke-width="1"/>
+  <line x1="430" y1="128" x2="590" y2="128" stroke="#888780" stroke-width="1"/>
+  <line x1="430" y1="128" x2="430" y2="148" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="590" y1="128" x2="590" y2="148" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- gate -->
+  <rect x="375" y="150" width="100" height="26" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="425" y="167" text-anchor="middle" font-size="10" fill="#444441">gate(x) → silu</text>
+
+  <!-- up -->
+  <rect x="540" y="150" width="80" height="26" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="580" y="167" text-anchor="middle" font-size="10" fill="#444441">up(x)</text>
+
+  <!-- merge arrows -->
+  <line x1="425" y1="176" x2="425" y2="194" stroke="#888780" stroke-width="1"/>
+  <line x1="580" y1="176" x2="580" y2="194" stroke="#888780" stroke-width="1"/>
+  <line x1="425" y1="194" x2="580" y2="194" stroke="#888780" stroke-width="1"/>
+  <line x1="510" y1="194" x2="510" y2="208" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- hadamard -->
+  <rect x="460" y="210" width="100" height="26" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="510" y="227" text-anchor="middle" font-size="10" fill="#444441">⊙  element-wise</text>
+
+  <line x1="510" y1="236" x2="510" y2="252" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- down -->
+  <rect x="460" y="254" width="100" height="26" rx="4" fill="#E1F5EE" stroke="#5DCAA5" stroke-width="0.5"/>
+  <text x="510" y="271" text-anchor="middle" font-size="11" fill="#0f6e56">(B, T, dim)</text>
+
+  <!-- note -->
+  <text x="370" y="298" font-size="9" fill="#888780">hidden = dim × 8/3 · no bias · dropout after gate</text>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- RotaryEmbedding  (bottom-left) -->
+  <!-- ══════════════════════════════════════════════ -->
+  <rect x="20" y="300" width="300" height="258" rx="10" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+  <text x="30" y="320" font-size="12" font-weight="600" fill="#854f0b">RotaryEmbedding (RoPE)</text>
+  <text x="30" y="336" font-size="10" fill="#5f5e5a">q_rot = q·cos + rotate_half(q)·sin</text>
+
+  <!-- q and k inputs side by side -->
+  <rect x="40" y="348" width="80" height="26" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="80" y="365" text-anchor="middle" font-size="11" fill="#854f0b">q (B,H,T,D)</text>
+
+  <rect x="170" y="348" width="80" height="26" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="210" y="365" text-anchor="middle" font-size="11" fill="#854f0b">k (B,H,T,D)</text>
+
+  <!-- arrow down from q and k into pre-compute -->
+  <line x1="80" y1="374" x2="80" y2="392" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="210" y1="374" x2="210" y2="392" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- cos/sin cache box (shared) -->
+  <rect x="40" y="394" width="210" height="26" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="145" y="411" text-anchor="middle" font-size="10" fill="#444441">cos/sin cache [:T]  (pre-computed)</text>
+
+  <line x1="80" y1="420" x2="80" y2="440" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="210" y1="420" x2="210" y2="440" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- rotate q -->
+  <rect x="30" y="442" width="110" height="36" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="85" y="457" text-anchor="middle" font-size="10" fill="#444441">q·cos +</text>
+  <text x="85" y="470" text-anchor="middle" font-size="10" fill="#444441">rotate_half(q)·sin</text>
+
+  <!-- rotate k -->
+  <rect x="155" y="442" width="110" height="36" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="210" y="457" text-anchor="middle" font-size="10" fill="#444441">k·cos +</text>
+  <text x="210" y="470" text-anchor="middle" font-size="10" fill="#444441">rotate_half(k)·sin</text>
+
+  <line x1="85" y1="478" x2="85" y2="496" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+  <line x1="210" y1="478" x2="210" y2="496" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- outputs -->
+  <rect x="30" y="498" width="110" height="26" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="85" y="515" text-anchor="middle" font-size="11" fill="#854f0b">q_rot</text>
+
+  <rect x="155" y="498" width="110" height="26" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="210" y="515" text-anchor="middle" font-size="11" fill="#854f0b">k_rot</text>
+
+  <text x="30" y="542" font-size="9" fill="#888780">No learned params · norm-preserving rotation</text>
+  <text x="30" y="554" font-size="9" fill="#888780">Cache rebuilt automatically for longer seqs</text>
+
+  <!-- ══════════════════════════════════════════════ -->
+  <!-- CausalSelfAttention  (bottom-right) -->
+  <!-- ══════════════════════════════════════════════ -->
+  <rect x="360" y="300" width="300" height="258" rx="10" fill="#f1efe8" stroke="#b4b2a9" stroke-width="0.5"/>
+  <text x="370" y="320" font-size="12" font-weight="600" fill="#3c3489">CausalSelfAttention</text>
+  <text x="370" y="336" font-size="10" fill="#5f5e5a">multi-head · RoPE · Flash Attn (PyTorch 2.x)</text>
+
+  <!-- input -->
+  <rect x="460" y="348" width="100" height="26" rx="4" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="510" y="365" text-anchor="middle" font-size="11" fill="#3c3489">x (B, T, dim)</text>
+
+  <line x1="510" y1="374" x2="510" y2="392" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- QKV linear -->
+  <rect x="430" y="394" width="160" height="26" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="510" y="411" text-anchor="middle" font-size="10" fill="#444441">QKV linear  →  chunk(3)</text>
+
+  <line x1="510" y1="420" x2="510" y2="438" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- RoPE -->
+  <rect x="430" y="440" width="160" height="26" rx="4" fill="#FAEEDA" stroke="#FAC775" stroke-width="0.5"/>
+  <text x="510" y="457" text-anchor="middle" font-size="10" fill="#854f0b">RoPE → q_rot, k_rot</text>
+
+  <line x1="510" y1="466" x2="510" y2="484" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- SDPA -->
+  <rect x="410" y="486" width="200" height="36" rx="4" fill="#fff" stroke="#d3d1c7" stroke-width="0.5"/>
+  <text x="510" y="501" text-anchor="middle" font-size="10" fill="#444441">scaled_dot_product_attention</text>
+  <text x="510" y="514" text-anchor="middle" font-size="10" fill="#444441">is_causal=True</text>
+
+  <line x1="510" y1="522" x2="510" y2="540" stroke="#888780" stroke-width="1" marker-end="url(#arr)"/>
+
+  <!-- output proj -->
+  <rect x="460" y="542" width="100" height="26" rx="4" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="0.5"/>
+  <text x="510" y="559" text-anchor="middle" font-size="11" fill="#3c3489">(B, T, dim)</text>
+
+  <text x="370" y="547" font-size="9" fill="#888780">No bias on QKV or proj</text>
+</svg>

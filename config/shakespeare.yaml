@@ -1,0 +1,42 @@
+model:
+  name: "AttnResLM_Shakespeare"
+  dim: 256
+  depth: 6
+  heads: 4
+  head_dim: 64
+  mlp_multiplier: 4
+  dropout: 0.1
+  use_block_attn_res: true   # set false to use Full AttnRes
+  block_size: 4
+  norm_eps: 1.0e-6
+  max_seq_len: 256            # context window (characters)
+
+training:
+  epochs: 20
+  batch_size: 64
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  grad_clip: 1.0
+  warmup_steps: 300
+  log_every: 50
+  save_every: 1
+  seed: 42
+  device: "auto"
+
+data:
+  dataset: "shakespeare"      # triggers ShakespeareDataset loader
+  data_dir: "data/"
+  seq_len: 256                # characters per training window
+  stride: 128                 # 50 % overlap → ~2× more windows
+  num_workers: 2
+  pin_memory: true
+  val_split: 0.1
+
+generation:
+  max_new_tokens: 500
+  temperature: 0.8
+  top_k: 40
+
+logging:
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"

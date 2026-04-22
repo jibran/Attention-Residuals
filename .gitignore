@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+uv.lock
+
+# PyTorch checkpoints
+*.pth
+*.pt
+checkpoints/best/
+checkpoints/latest/
+
+# Logs (keep directory, not content)
+logs/*.csv
+logs/*.png
+
+# Dataset (large files)
+data/raw/
+data/processed/
+
+# Predictions output
+predictions/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoint
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Weights & Biases
+wandb/

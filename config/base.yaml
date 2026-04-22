@@ -1,0 +1,35 @@
+model:
+  name: "AttnResTransformer"
+  dim: 256
+  depth: 8
+  heads: 4
+  head_dim: 64
+  mlp_multiplier: 4
+  dropout: 0.1
+  use_block_attn_res: true   # false = Full AttnRes, true = Block AttnRes
+  block_size: 4              # layers per block (Block AttnRes only)
+  norm_eps: 1.0e-6
+  max_seq_len: 512
+
+training:
+  epochs: 20
+  batch_size: 64
+  lr: 3.0e-4
+  weight_decay: 1.0e-2
+  grad_clip: 1.0
+  warmup_steps: 200
+  log_every: 50              # steps between console log lines
+  save_every: 1              # epochs between checkpoint saves
+  seed: 42
+  device: "auto"             # "auto" | "cpu" | "cuda" | "mps"
+
+data:
+  dataset: "mnist"           # "mnist" | "cifar10" | "custom"
+  data_dir: "data/"
+  num_workers: 2
+  pin_memory: true
+  val_split: 0.1             # fraction of train set used for validation
+
+logging:
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"
