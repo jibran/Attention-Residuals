@@ -287,7 +287,8 @@ class KVCache:
 
 
 class CausalSelfAttention(nn.Module):
-    """Multi-head causal self-attention with RoPE and optional KV-cache.
+    """Multi-head causal self-attention with RoPE, optional KV-cache, and
+    optional Exclusive Self Attention (XSA).
 
     Uses :func:`torch.nn.functional.scaled_dot_product_attention` (Flash
     Attention when available via PyTorch 2.x).
@@ -309,12 +310,29 @@ class CausalSelfAttention(nn.Module):
     The cache is **never** used during training (``model.training == True``).
     Pass ``kv_cache=None`` (the default) for all training and prefill steps.
 
+    XSA behaviour
+    -------------
+    When ``use_xsa=True``, after computing the standard attention output
+    ``y_i = Σ a_{i,j} v_j``, the component of ``y_i`` along the normalised
+    self-value vector ``v̂_i`` is removed::
+
+        z_i = y_i − (y_i · v̂_i) v̂_i
+
+    This eliminates the *attention similarity bias* — the tendency of SA to
+    copy its own value vector into its output — and forces the attention layer
+    to represent only contextual information orthogonal to the current token's
+    own representation.  Compatible with KV cache and all AttnRes variants.
+
+    Reference: Zhai (2026), "Exclusive Self Attention", arXiv:2603.09078.
+
     Args:
         dim: Model hidden dimension.
         heads: Number of attention heads.
         head_dim: Dimension per head.
         max_seq_len: Maximum sequence length (passed to RoPE).
         dropout: Attention dropout probability.
+        use_xsa: If ``True``, apply the XSA projection-removal step after
+            the standard attention aggregation.  Default ``False``.
     """
 
     def __init__(
@@ -324,10 +342,12 @@ class CausalSelfAttention(nn.Module):
         head_dim: int,
         max_seq_len: int = 512,
         dropout: float = 0.0,
+        use_xsa: bool = False,
     ) -> None:
         super().__init__()
         self.heads = heads
         self.head_dim = head_dim
+        self.use_xsa = use_xsa
         inner = heads * head_dim
 
         self.qkv = nn.Linear(dim, 3 * inner, bias=False)
@@ -335,41 +355,69 @@ class CausalSelfAttention(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.rope = RotaryEmbedding(head_dim, max_seq_len)
 
+    def _apply_xsa(
+        self,
+        out: torch.Tensor,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        """Remove each token's self-value component from the attention output.
+
+        Computes the XSA correction::
+
+            z_i = y_i − (y_i · v̂_i) v̂_i
+
+        where ``v̂_i = v_i / ‖v_i‖`` is the unit-norm self-value vector.
+
+        This is equivalent to projecting ``y_i`` onto the orthogonal complement
+        of the ``v_i`` direction, completely removing the *attention similarity
+        bias* described in arXiv:2603.09078.
+
+        Args:
+            out: Standard attention output ``(B, H, T_q, head_dim)``.
+            v: Self-value vectors for the *current* (new) tokens only,
+               ``(B, H, T_q, head_dim)``.  Must have the same ``T_q`` as
+               ``out``; during cached generation both are length 1.
+
+        Returns:
+            XSA-corrected output tensor of the same shape as ``out``.
+        """
+        vn = F.normalize(v, dim=-1)  # (B,H,T_q,head_dim)
+        return out - (out * vn).sum(dim=-1, keepdim=True) * vn
+
     def forward(
         self,
         x: torch.Tensor,
         kv_cache: KVCache | None = None,
     ) -> torch.Tensor:
-        """Compute causal self-attention, optionally with a KV cache.
+        """Compute causal self-attention, optionally with a KV cache and XSA.
 
         Args:
             x: Input tensor ``(B, T, dim)``.  During cached decoding ``T``
                 is typically 1 (one new token per step).
             kv_cache: Optional :class:`KVCache` instance for this layer.
-                When provided and ``not self.training``, new K/V are appended
-                to the cache and attention spans the full history.  Ignored
-                (treated as ``None``) during training.
+                When provided, new K/V are appended to the cache and attention
+                spans the full history.  Pass ``None`` (default) during
+                training and non-cached inference.
 
         Returns:
-            Output tensor ``(B, T, dim)``.
+            Output tensor ``(B, T, dim)``.  If ``use_xsa`` is ``True``, the
+            self-value component has been removed from each position's output.
         """
         B, T, _ = x.shape
 
         # Project to Q, K, V for the *new* tokens only
         qkv = self.qkv(x).chunk(3, dim=-1)  # 3 × (B, T, inner)
-        q, k, v = (t.view(B, T, self.heads, self.head_dim).transpose(1, 2) for t in qkv)
+        q, k, v = (
+            t.view(B, T, self.heads, self.head_dim).transpose(1, 2) for t in qkv
+        )  # each: (B, H, T, head_dim)
 
         use_cache = kv_cache is not None
 
         if use_cache:
-            # Apply RoPE with the current cache offset so new tokens get the
-            # correct absolute positions.
+            # ── KV-cache path ──────────────────────────────────────────────
             offset = kv_cache.length
             q, k = self.rope(q, k, offset=offset)
-            # Append to cache; k_full / v_full span [0, offset + T)
             k_full, v_full = kv_cache.update(k, v)
-            # Q attends over the full history — causal mask is already implicit
-            # (Q positions are all >= any cached K position), so is_causal=False.
             out = F.scaled_dot_product_attention(
                 q,
                 k_full,
@@ -378,7 +426,7 @@ class CausalSelfAttention(nn.Module):
                 is_causal=False,
             )
         else:
-            # Standard path: full-sequence causal attention (training + prefill)
+            # ── Full-context path (training + non-cached inference) ────────
             q, k = self.rope(q, k, offset=0)
             out = F.scaled_dot_product_attention(
                 q,
@@ -387,6 +435,14 @@ class CausalSelfAttention(nn.Module):
                 dropout_p=self.drop.p if self.training else 0.0,
                 is_causal=True,
             )
+
+        # ── XSA: remove self-value component from each position's output ───
+        # v contains the self-value vectors for the *new* tokens (length T).
+        # This is correct for both the full-context path and the cache path:
+        # in the cache path Q/V are length T_new=1, so the projection is
+        # computed on the single new token's self-value vector.
+        if self.use_xsa:
+            out = self._apply_xsa(out, v)
 
         out = out.transpose(1, 2).contiguous().view(B, T, -1)
         return self.proj(out)

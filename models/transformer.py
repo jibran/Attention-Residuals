@@ -124,6 +124,7 @@ class AttnResTransformer(nn.Module):
                     block_size=cfg.block_size,
                     use_block_attn_res=cfg.use_block_attn_res,
                     norm_eps=cfg.norm_eps,
+                    use_xsa=cfg.use_xsa,
                 )
                 for i in range(cfg.depth)
             ]
@@ -207,11 +208,14 @@ class _BaselineLayer(nn.Module):
         dropout: float = 0.0,
         max_seq_len: int = 512,
         norm_eps: float = 1e-6,
+        use_xsa: bool = False,
     ) -> None:
         super().__init__()
         self.attn_norm = RMSNorm(dim, eps=norm_eps)
         self.mlp_norm = RMSNorm(dim, eps=norm_eps)
-        self.attn = CausalSelfAttention(dim, heads, head_dim, max_seq_len, dropout)
+        self.attn = CausalSelfAttention(
+            dim, heads, head_dim, max_seq_len, dropout, use_xsa=use_xsa
+        )
         self.mlp = SwiGLU(dim, hidden_dim=dim * mlp_multiplier, dropout=dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -268,6 +272,7 @@ class BaselineTransformer(nn.Module):
                     dropout=cfg.dropout,
                     max_seq_len=n_patches,
                     norm_eps=cfg.norm_eps,
+                    use_xsa=cfg.use_xsa,
                 )
                 for _ in range(cfg.depth)
             ]
