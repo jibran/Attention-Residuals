@@ -10,6 +10,7 @@ model:
   block_size: 4
   norm_eps: 1.0e-6
   max_seq_len: 512           # match TinyStories-33M context length
+  use_xsa: false             # true enables Exclusive Self Attention (arXiv:2603.09078)
   use_kv_cache: false        # true enables KV cache at inference; never use during training
 
 training:

@@ -9,6 +9,8 @@ model:
   use_block_attn_res: false  # Full AttnRes — attends over ALL previous outputs
   block_size: 4
   norm_eps: 1.0e-6
+  use_xsa: false             # true enables Exclusive Self Attention (arXiv:2603.09078)
+  use_kv_cache: false        # true enables KV cache at inference; never use during training
   max_seq_len: 512
 
 training:
