@@ -214,6 +214,80 @@ class TestTrainingLogger:
         assert "val_loss" in header
         assert "train_acc" in header
 
+    def test_tokens_per_sec_logged(self, tmp):
+        """log_step must write tokens_per_sec to CSV when provided."""
+        logger = TrainingLogger(log_dir=tmp, model_name="M")
+        logger.log_step(
+            epoch=1,
+            step=10,
+            train_loss=0.5,
+            train_acc=0.8,
+            lr=1e-3,
+            tokens_per_sec=45_000.0,
+            step_ms=22.4,
+        )
+        logger.close()
+        rows = list(csv.DictReader(logger.log_path.open()))
+        row = [r for r in rows if r["phase"] == "train"][0]
+        assert row["tokens_per_sec"] != ""
+        assert float(row["tokens_per_sec"]) == pytest.approx(45_000, rel=0.01)
+        assert float(row["step_ms"]) == pytest.approx(22.4, rel=0.01)
+
+    def test_step_no_timing_leaves_columns_empty(self, tmp):
+        """log_step without timing args must leave timing columns empty."""
+        logger = TrainingLogger(log_dir=tmp, model_name="M")
+        logger.log_step(epoch=1, step=10, train_loss=0.5, train_acc=0.8, lr=1e-3)
+        logger.close()
+        rows = list(csv.DictReader(logger.log_path.open()))
+        row = [r for r in rows if r["phase"] == "train"][0]
+        assert row["tokens_per_sec"] == ""
+        assert row["step_ms"] == ""
+
+    def test_epoch_time_s_logged(self, tmp):
+        """log_epoch must write epoch_time_s to CSV when provided."""
+        logger = TrainingLogger(log_dir=tmp, model_name="M")
+        logger.log_epoch(
+            epoch=1,
+            step=100,
+            train_loss=0.4,
+            train_acc=0.85,
+            val_loss=0.35,
+            val_acc=0.90,
+            lr=1e-3,
+            epoch_time_s=142.7,
+        )
+        logger.close()
+        rows = list(csv.DictReader(logger.log_path.open()))
+        row = [r for r in rows if r["phase"] == "epoch"][0]
+        assert float(row["epoch_time_s"]) == pytest.approx(142.7, rel=0.01)
+
+    def test_epoch_no_timing_leaves_column_empty(self, tmp):
+        """log_epoch without epoch_time_s must leave that column empty."""
+        logger = TrainingLogger(log_dir=tmp, model_name="M")
+        logger.log_epoch(
+            epoch=1,
+            step=100,
+            train_loss=0.4,
+            train_acc=0.85,
+            val_loss=0.35,
+            val_acc=0.90,
+            lr=1e-3,
+        )
+        logger.close()
+        rows = list(csv.DictReader(logger.log_path.open()))
+        row = [r for r in rows if r["phase"] == "epoch"][0]
+        assert row["epoch_time_s"] == ""
+
+    def test_csv_timing_columns_in_header(self, tmp):
+        """CSV header must include the new timing columns."""
+        logger = TrainingLogger(log_dir=tmp, model_name="M")
+        logger.close()
+        header = logger.log_path.read_text().splitlines()[0].split(",")
+        assert "tokens_per_sec" in header
+        assert "step_ms" in header
+        assert "epoch_time_s" in header
+        assert "elapsed_s" in header
+
 
 # ---------------------------------------------------------------------------
 # CheckpointManager

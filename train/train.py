@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 # Allow running from any working directory
@@ -207,12 +208,17 @@ def train(cfg: Config, baseline: bool = False, resume: bool = False) -> None:
     model.train()
     for epoch in range(start_epoch + 1, cfg.training.epochs + 1):
         epoch_loss, epoch_correct, epoch_total = 0.0, 0, 0
+        _window_samples = 0
+        _window_steps = 0
+        _window_t0 = time.time()
+        _epoch_t0 = time.time()
 
         pbar = tqdm(
             train_loader, desc=f"Epoch {epoch}/{cfg.training.epochs}", leave=False
         )
         for images, labels in pbar:
             images, labels = images.to(device), labels.to(device)
+            _batch_n = images.size(0)
 
             optimizer.zero_grad()
             logits = model(images)
@@ -225,26 +231,53 @@ def train(cfg: Config, baseline: bool = False, resume: bool = False) -> None:
             optimizer.step()
             scheduler.step()
             global_step += 1
+            _window_samples += _batch_n
+            _window_steps += 1
 
             batch_acc = (logits.argmax(-1) == labels).float().mean().item()
-            epoch_loss += loss.item() * images.size(0)
+            epoch_loss += loss.item() * _batch_n
             epoch_correct += (logits.argmax(-1) == labels).sum().item()
-            epoch_total += images.size(0)
+            epoch_total += _batch_n
 
             pbar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{batch_acc*100:.1f}%")
 
             if global_step % cfg.training.log_every == 0:
                 lr = scheduler.get_last_lr()[0]
-                logger.log_step(epoch, global_step, loss.item(), batch_acc, lr)
+                _elapsed_w = time.time() - _window_t0
+                _tps = _window_samples / max(_elapsed_w, 1e-9)
+                _sms = (_elapsed_w / max(_window_steps, 1)) * 1000
+                logger.log_step(
+                    epoch,
+                    global_step,
+                    loss.item(),
+                    batch_acc,
+                    lr,
+                    tokens_per_sec=_tps,
+                    step_ms=_sms,
+                )
+                _window_samples = 0
+                _window_steps = 0
+                _window_t0 = time.time()
+
+        epoch_time_s = time.time() - _epoch_t0
 
         # --------------------------------------------------------- Validation
         val_loss, val_acc = evaluate(model, val_loader, criterion, device)
         train_loss = epoch_loss / epoch_total
         train_acc = epoch_correct / epoch_total
         lr_now = scheduler.get_last_lr()[0]
+        epoch_ips = epoch_total / max(epoch_time_s, 1e-9)
+        print(f"  {epoch_time_s:.0f}s  {epoch_ips:.0f} img/s")
 
         logger.log_epoch(
-            epoch, global_step, train_loss, train_acc, val_loss, val_acc, lr_now
+            epoch,
+            global_step,
+            train_loss,
+            train_acc,
+            val_loss,
+            val_acc,
+            lr_now,
+            epoch_time_s=epoch_time_s,
         )
 
         # ------------------------------------------------------ Checkpointing
