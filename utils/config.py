@@ -141,16 +141,34 @@ class GenerationConfig:
 
 @dataclass
 class LoggingConfig:
-    """Paths for logs and checkpoints.
+    """Paths for logs and checkpoints, plus experiment-tracker settings.
 
     Attributes:
         log_dir: Directory where CSV training logs are written.
         checkpoint_dir: Root directory; ``best/`` and ``latest/``
             subdirectories are created automatically.
+        tracker: Experiment tracking backend.  One of ``"none"`` (default,
+            no external logging), ``"wandb"`` (Weights & Biases), or
+            ``"mlflow"`` (MLflow).  Enable via ``logging.tracker: wandb``
+            in the YAML config or ``--override logging.tracker=wandb`` at
+            the CLI.
+        wandb_project: W&B project name.  Only used when
+            ``tracker: wandb``.  Defaults to ``"attnres"``.
+        wandb_run_name: W&B display name for this run.  If empty, W&B
+            auto-generates a name.
+        mlflow_tracking_uri: MLflow tracking server URI.  A relative path
+            (e.g. ``"mlruns"``) creates a local file store.  Use
+            ``"http://host:5000"`` for a remote server.
+        mlflow_experiment: MLflow experiment name that groups related runs.
     """
 
     log_dir: str = "logs/"
     checkpoint_dir: str = "checkpoints/"
+    tracker: str = "none"
+    wandb_project: str = "attnres"
+    wandb_run_name: str = ""
+    mlflow_tracking_uri: str = "mlruns"
+    mlflow_experiment: str = "AttnRes"
 
 
 @dataclass

@@ -1,4 +1,5 @@
-"""Training logger: writes CSV logs and prints rich console output.
+"""Training logger: writes CSV logs, prints rich console output, and forwards
+metrics to an optional experiment tracker (W&B or MLflow).
 
 Each training run creates one CSV file at::
 
@@ -6,14 +7,20 @@ Each training run creates one CSV file at::
 
 Columns
 -------
-epoch, step, train_loss, train_acc, val_loss, val_acc, lr, elapsed_s
+epoch, step, phase, train_loss, train_acc, val_loss, val_acc, lr, elapsed_s
 
 Usage::
 
-    logger = TrainingLogger(log_dir="logs/", model_name="AttnResTransformer")
+    from utils.tracker import ExperimentTracker
+
+    tracker = ExperimentTracker.from_config(cfg, run_name="AttnResLM")
+    logger  = TrainingLogger(log_dir="logs/", model_name="AttnResLM",
+                             tracker=tracker)
     logger.log_step(epoch=1, step=50, train_loss=0.42, train_acc=0.87, lr=3e-4)
-    logger.log_epoch(epoch=1, val_loss=0.35, val_acc=0.91)
+    logger.log_epoch(epoch=1, step=800, train_loss=0.38, train_acc=0.90,
+                     val_loss=0.35, val_acc=0.91, lr=3e-4)
     logger.close()
+    tracker.finish()
 """
 
 from __future__ import annotations
@@ -22,6 +29,10 @@ import csv
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from utils.tracker import ExperimentTracker
 
 try:
     from rich import box as rich_box
@@ -34,7 +45,8 @@ except ImportError:
 
 
 class TrainingLogger:
-    """Logs training metrics to a timestamped CSV and prints to console.
+    """Logs training metrics to a timestamped CSV, the console, and an optional
+    experiment tracker (W&B / MLflow).
 
     Attributes:
         log_path: Absolute path to the CSV file for this run.
@@ -42,6 +54,10 @@ class TrainingLogger:
     Args:
         log_dir: Directory where CSV files are written.
         model_name: Used as the prefix of the CSV filename.
+        tracker: Optional :class:`~utils.tracker.ExperimentTracker` instance.
+            When supplied, every call to :meth:`log_step` and
+            :meth:`log_epoch` also forwards the metrics to the tracker.
+            Pass ``None`` (default) for CSV-only logging.
     """
 
     _CSV_FIELDS = [
@@ -56,8 +72,14 @@ class TrainingLogger:
         "elapsed_s",
     ]
 
-    def __init__(self, log_dir: str | Path, model_name: str) -> None:
+    def __init__(
+        self,
+        log_dir: str | Path,
+        model_name: str,
+        tracker: ExperimentTracker | None = None,
+    ) -> None:
         self._start = time.time()
+        self._tracker = tracker
         log_dir = Path(log_dir)
         log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -71,6 +93,8 @@ class TrainingLogger:
 
         self._console = Console() if _RICH else None
         self._print(f"[bold]Log file:[/bold] {self.log_path}")
+        if tracker and tracker.is_active:
+            self._print(f"[bold]Tracker:[/bold] {tracker.backend}")
 
     # ------------------------------------------------------------------
     # Public API
@@ -84,7 +108,7 @@ class TrainingLogger:
         train_acc: float,
         lr: float,
     ) -> None:
-        """Write a training-step row to CSV and print a compact console line.
+        """Write a training-step row to CSV, print to console, and track.
 
         Args:
             epoch: Current epoch index (1-based).
@@ -93,6 +117,7 @@ class TrainingLogger:
             train_acc: Accuracy on the current mini-batch (0–1).
             lr: Current learning rate.
         """
+        elapsed = round(time.time() - self._start, 1)
         row = {
             "epoch": epoch,
             "step": step,
@@ -102,7 +127,7 @@ class TrainingLogger:
             "val_loss": "",
             "val_acc": "",
             "lr": f"{lr:.2e}",
-            "elapsed_s": round(time.time() - self._start, 1),
+            "elapsed_s": elapsed,
         }
         self._writer.writerow(row)
         self._fh.flush()
@@ -116,6 +141,17 @@ class TrainingLogger:
         )
         self._print(msg)
 
+        # Forward to tracker
+        if self._tracker and self._tracker.is_active:
+            self._tracker.log_metrics(
+                {
+                    "train/loss": train_loss,
+                    "train/acc": train_acc,
+                    "train/lr": lr,
+                },
+                step=step,
+            )
+
     def log_epoch(
         self,
         epoch: int,
@@ -126,7 +162,7 @@ class TrainingLogger:
         val_acc: float,
         lr: float,
     ) -> None:
-        """Write an end-of-epoch summary row to CSV and print a table.
+        """Write an end-of-epoch summary row to CSV, print a table, and track.
 
         Args:
             epoch: Current epoch index (1-based).
@@ -179,8 +215,27 @@ class TrainingLogger:
                 f"lr {lr:.2e} | {elapsed}s"
             )
 
+        # Forward to tracker
+        if self._tracker and self._tracker.is_active:
+            self._tracker.log_metrics(
+                {
+                    "epoch/train_loss": train_loss,
+                    "epoch/train_acc": train_acc,
+                    "epoch/val_loss": val_loss,
+                    "epoch/val_acc": val_acc,
+                    "epoch/lr": lr,
+                    "epoch/elapsed_s": elapsed,
+                },
+                step=step,
+            )
+
     def close(self) -> None:
-        """Flush and close the underlying CSV file handle."""
+        """Flush and close the underlying CSV file handle.
+
+        Does **not** call :meth:`~utils.tracker.ExperimentTracker.finish` on
+        the tracker — the caller is responsible for that so artifacts can be
+        uploaded after :meth:`close` is called.
+        """
         self._fh.flush()
         self._fh.close()
         self._print(f"[dim]Logger closed → {self.log_path}[/dim]")

@@ -9,12 +9,14 @@ from utils.checkpoint import CheckpointManager
 from utils.config import Config, GenerationConfig, load_config
 from utils.device import resolve_device, seed_everything
 from utils.logger import TrainingLogger
+from utils.tracker import ExperimentTracker
 
 __all__ = [
     "load_config",
     "Config",
     "GenerationConfig",
     "TrainingLogger",
+    "ExperimentTracker",
     "CheckpointManager",
     "resolve_device",
     "seed_everything",
