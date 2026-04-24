@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="icon-btn sidebar-toggle" id="sidebarToggle" title="Toggle sidebar" aria-label="Toggle sidebar">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+      <span class="app-title">{{ app_title }}</span>
+    </div>
+    <div class="topbar-right">
+      <button class="icon-btn" id="themeToggle" title="Toggle light/dark mode" aria-label="Toggle theme">
+        <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+      </button>
+      <a href="/logout" class="icon-btn" title="Log out" aria-label="Log out">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ── Sidebar ──────────────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-inner">
+
+        <section class="ctrl-section">
+          <label class="ctrl-label" for="modelSelect">Model</label>
+          <select id="modelSelect" class="ctrl-select">
+            {% if models %}
+              {% for m in models %}
+              <option value="{{ m.model_id }}">{{ m.name }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="">No checkpoints found</option>
+            {% endif %}
+          </select>
+          <div id="modelMeta" class="model-meta"></div>
+        </section>
+
+        <section class="ctrl-section">
+          <label class="ctrl-label" for="tempSlider">
+            Temperature <span class="ctrl-value" id="tempVal">0.8</span>
+          </label>
+          <input type="range" id="tempSlider" class="ctrl-slider"
+                 min="0.01" max="2" step="0.01" value="0.8" />
+          <div class="slider-hints"><span>Precise</span><span>Creative</span></div>
+        </section>
+
+        <section class="ctrl-section">
+          <label class="ctrl-label" for="tokensSlider">
+            Max new tokens <span class="ctrl-value" id="tokensVal">200</span>
+          </label>
+          <input type="range" id="tokensSlider" class="ctrl-slider"
+                 min="1" max="{{ max_tokens_limit }}" step="1" value="200" />
+          <div class="slider-hints"><span>1</span><span>{{ max_tokens_limit }}</span></div>
+        </section>
+
+        <section class="ctrl-section">
+          <label class="ctrl-label" for="topkSlider">
+            Top-k <span class="ctrl-value" id="topkVal">40</span>
+          </label>
+          <input type="range" id="topkSlider" class="ctrl-slider"
+                 min="0" max="200" step="1" value="40" />
+          <div class="slider-hints"><span>0 (off)</span><span>200</span></div>
+        </section>
+
+        <section class="ctrl-section">
+          <label class="ctrl-toggle-label">
+            <input type="checkbox" id="kvCacheToggle" class="ctrl-checkbox" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span>KV cache</span>
+          </label>
+          <p class="ctrl-hint">Faster decoding, same output.</p>
+        </section>
+
+        <button class="btn-clear" id="clearBtn">Clear conversation</button>
+
+        <div class="sidebar-footer">
+          Signed in as <strong>{{ user }}</strong>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Chat area ────────────────────────────────────────────────── -->
+    <main class="chat-area">
+      <div class="messages" id="messages">
+        <div class="welcome-msg">
+          <div class="welcome-icon">✦</div>
+          <h2>AttnRes Language Model</h2>
+          <p>Select a model and start typing to generate text.</p>
+        </div>
+      </div>
+
+      <div class="input-bar">
+        <div class="input-wrap">
+          <textarea id="promptInput" class="prompt-input"
+                    rows="1" placeholder="Enter a prompt…"
+                    maxlength="8192"></textarea>
+          <button id="sendBtn" class="send-btn" title="Generate (Enter)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13"/>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+            </svg>
+          </button>
+        </div>
+        <p class="input-hint">Enter to send · Shift+Enter for newline</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
