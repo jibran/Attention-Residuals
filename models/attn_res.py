@@ -30,7 +30,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from models.components import RMSNorm, CausalSelfAttention, SwiGLU
+from models.components import RMSNorm, CausalSelfAttention, SwiGLU, KVCache
 
 
 # ---------------------------------------------------------------------------
@@ -190,8 +190,10 @@ class AttnResTransformerLayer(nn.Module):
         block_size: int = 4,
         use_block_attn_res: bool = True,
         norm_eps: float = 1e-6,
+        use_kv_cache: bool = False,
     ) -> None:
         super().__init__()
+        self.use_kv_cache = use_kv_cache
         self.layer_number = layer_number
         self.block_size = block_size  # sublayers per block
         self.use_block_attn_res = use_block_attn_res
@@ -219,6 +221,7 @@ class AttnResTransformerLayer(nn.Module):
     def forward_full(
         self,
         layer_outputs: list[torch.Tensor],
+        kv_cache: Optional[KVCache] = None,
     ) -> list[torch.Tensor]:
         """Full AttnRes forward pass.
 
@@ -228,6 +231,9 @@ class AttnResTransformerLayer(nn.Module):
         Args:
             layer_outputs: Accumulated list of all previous sublayer outputs
                 ``[embedding, f_1(h_1), f_2(h_2), …]``.
+            kv_cache: Optional :class:`~models.components.KVCache` for this
+                layer.  Passed directly to :meth:`~models.components.CausalSelfAttention.forward`.
+                ``None`` (default) uses full-context attention.
 
         Returns:
             Updated ``layer_outputs`` with two new tensors appended (attn out,
@@ -235,7 +241,7 @@ class AttnResTransformerLayer(nn.Module):
         """
         # --- Self-attention sublayer ---
         h_attn = self.attn_res_attn(layer_outputs)
-        attn_out = self.attn(self.attn_norm(h_attn))
+        attn_out = self.attn(self.attn_norm(h_attn), kv_cache=kv_cache)
         layer_outputs.append(attn_out)
 
         # --- MLP sublayer ---
@@ -253,6 +259,7 @@ class AttnResTransformerLayer(nn.Module):
         self,
         block_reps: list[torch.Tensor],
         partial_block: torch.Tensor,
+        kv_cache: Optional[KVCache] = None,
     ) -> tuple[list[torch.Tensor], torch.Tensor]:
         """Block AttnRes forward pass.
 
@@ -263,6 +270,8 @@ class AttnResTransformerLayer(nn.Module):
             block_reps: List of completed block summaries (shape ``(B,T,d)``
                 each).  The token embedding is block 0.
             partial_block: Running intra-block residual sum ``(B, T, d)``.
+            kv_cache: Optional :class:`~models.components.KVCache` for this
+                layer.  ``None`` (default) uses full-context attention.
 
         Returns:
             Tuple ``(block_reps, partial_block)`` after processing both
@@ -272,7 +281,7 @@ class AttnResTransformerLayer(nn.Module):
         """
         # --- Self-attention sublayer ---
         h_attn = self.attn_res_attn(block_reps, partial_block)
-        attn_out = self.attn(self.attn_norm(h_attn))
+        attn_out = self.attn(self.attn_norm(h_attn), kv_cache=kv_cache)
         partial_block = partial_block + attn_out
 
         # Block boundary check: each transformer layer = 2 sublayers
@@ -298,11 +307,17 @@ class AttnResTransformerLayer(nn.Module):
     # Unified forward
     # ------------------------------------------------------------------
 
-    def forward(self, *args):
+    def forward(self, *args, kv_cache: Optional[KVCache] = None):
         """Route to full or block forward depending on construction.
 
         For Full AttnRes pass a single list ``layer_outputs``.
         For Block AttnRes pass ``(block_reps, partial_block)``.
+
+        Args:
+            *args: Positional state arguments as above.
+            kv_cache: Optional :class:`~models.components.KVCache` for this
+                layer's attention sublayer.  ``None`` during training and
+                non-cached inference.
 
         Returns:
             Updated state as returned by :meth:`forward_full` or
@@ -310,7 +325,7 @@ class AttnResTransformerLayer(nn.Module):
         """
         if self.use_block_attn_res:
             assert len(args) == 2, "Block AttnRes needs (block_reps, partial_block)."
-            return self.forward_block(*args)
+            return self.forward_block(*args, kv_cache=kv_cache)
         else:
             assert len(args) == 1, "Full AttnRes needs (layer_outputs,)."
-            return self.forward_full(*args)
+            return self.forward_full(*args, kv_cache=kv_cache)
