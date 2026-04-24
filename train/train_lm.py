@@ -1,31 +1,37 @@
-"""Language-model training script for Tiny-Shakespeare.
+"""Language-model training script.
 
-Trains :class:`~models.AttnResLM` (or :class:`~models.BaselineLM`) on the
-``Trelis/tiny-shakespeare`` dataset using character-level next-token
-prediction.  Logs perplexity + loss to a timestamped CSV and saves
-checkpoints to ``checkpoints/best/`` and ``checkpoints/latest/``.
+Supports two datasets, selected via ``data.dataset`` in the YAML config:
 
-After each epoch a short sample is generated from a fixed seed prompt so
-you can qualitatively track how the model learns to write Shakespeare.
+* ``"shakespeare"`` — character-level next-token prediction on
+  ``Trelis/tiny-shakespeare`` (~1 M chars, vocab ~67).
+* ``"tinystories"`` — BPE next-token prediction on
+  ``roneneldan/TinyStories`` (~2.12 M stories, vocab 50 257, context 512).
+
+Logs perplexity + loss to a timestamped CSV and saves checkpoints to
+``checkpoints/best/`` and ``checkpoints/latest/``.  After each epoch a short
+generation sample is printed so you can track qualitative progress.
 
 Usage::
 
-    # Block AttnRes (default):
+    # TinyStories — Block AttnRes (default):
+    python train/train_lm.py --config config/tinystories.yaml
+
+    # TinyStories — fast debug with 50 k stories:
+    python train/train_lm.py --config config/tinystories.yaml \\
+        --max_train_stories 50000
+
+    # Shakespeare character-level:
     python train/train_lm.py --config config/shakespeare.yaml
 
-    # Full AttnRes:
-    python train/train_lm.py --config config/shakespeare.yaml \\
+    # Full AttnRes variant:
+    python train/train_lm.py --config config/tinystories.yaml \\
         --override model.use_block_attn_res=false
 
     # Standard-residual baseline:
-    python train/train_lm.py --config config/shakespeare.yaml --baseline
+    python train/train_lm.py --config config/tinystories.yaml --baseline
 
     # Resume from latest checkpoint:
-    python train/train_lm.py --config config/shakespeare.yaml --resume
-
-    # Custom prompt for generation preview:
-    python train/train_lm.py --config config/shakespeare.yaml \\
-        --prompt "ROMEO: " --max_new_tokens 300
+    python train/train_lm.py --config config/tinystories.yaml --resume
 """
 
 from __future__ import annotations
@@ -34,6 +40,7 @@ import argparse
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -45,7 +52,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from dataset.shakespeare_dataset import ShakespeareDataset
-from dataset.tokenizer import CharTokenizer
+from dataset.tinystories_dataset import TinyStoriesDataset
 from models import build_lm
 from utils import (
     CheckpointManager,
@@ -55,6 +62,102 @@ from utils import (
     seed_everything,
 )
 from utils.config import Config
+
+# ---------------------------------------------------------------------------
+# Dataset loader dispatcher
+# ---------------------------------------------------------------------------
+
+
+def _load_dataset(cfg: Config, device: torch.device):
+    """Return ``(loaders, tokenizer)`` for the dataset named in ``cfg.data.dataset``.
+
+    Supports ``"shakespeare"`` (char-level) and ``"tinystories"`` (BPE).
+
+    Args:
+        cfg: Full experiment configuration.
+        device: Training device (used to decide whether to pin memory).
+
+    Returns:
+        Tuple ``(loaders_dict, tokenizer)`` where ``loaders_dict`` has at
+        least ``"train"`` and ``"val"`` keys.
+    """
+    name = cfg.data.dataset.lower()
+    pin = cfg.data.pin_memory and device.type != "cpu"
+
+    if name == "shakespeare":
+        return ShakespeareDataset.get_loaders(
+            data_dir=cfg.data.data_dir,
+            seq_len=cfg.data.seq_len,
+            stride=cfg.data.stride,
+            val_split=cfg.data.val_split,
+            batch_size=cfg.training.batch_size,
+            num_workers=cfg.data.num_workers,
+            pin_memory=pin,
+            seed=cfg.training.seed,
+        )
+
+    if name == "tinystories":
+        return TinyStoriesDataset.get_loaders(
+            data_dir=cfg.data.data_dir,
+            seq_len=cfg.data.seq_len,
+            stride=cfg.data.stride if cfg.data.stride else None,
+            batch_size=cfg.training.batch_size,
+            num_workers=cfg.data.num_workers,
+            pin_memory=pin,
+            seed=cfg.training.seed,
+        )
+
+    raise ValueError(
+        f"Unknown dataset '{cfg.data.dataset}'. "
+        "Supported: 'shakespeare', 'tinystories'."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tokeniser-agnostic encode / decode helpers
+# ---------------------------------------------------------------------------
+
+
+def _encode_prompt(prompt: str, tokenizer: Any, device: torch.device) -> torch.Tensor:
+    """Encode a text prompt to a token-id tensor ``(1, T)``.
+
+    Handles both :class:`~dataset.tokenizer.CharTokenizer` (has ``.encode()``)
+    and HuggingFace ``PreTrainedTokenizer`` (uses ``__call__``).
+
+    Args:
+        prompt: Seed text string.
+        tokenizer: Fitted tokeniser (char-level or BPE).
+        device: Target device.
+
+    Returns:
+        Token ids tensor ``(1, T)``.
+    """
+    if hasattr(tokenizer, "encode") and callable(tokenizer.encode):
+        # Works for both CharTokenizer and HF tokeniser
+        ids = tokenizer.encode(prompt)
+        if isinstance(ids, list):
+            return torch.tensor(ids, dtype=torch.long, device=device).unsqueeze(0)
+        # HF returns an object with input_ids when return_tensors is set
+        return ids.to(device)
+    raise TypeError(f"Unsupported tokeniser type: {type(tokenizer)}")
+
+
+def _decode_ids(ids: list[int], tokenizer: Any) -> str:
+    """Decode a list of token ids back to a string.
+
+    Args:
+        ids: List of integer token ids.
+        tokenizer: Fitted tokeniser.
+
+    Returns:
+        Decoded text string.
+    """
+    if hasattr(tokenizer, "decode"):
+        text = tokenizer.decode(ids)
+        if isinstance(text, str):
+            return text
+    raise TypeError(f"Unsupported tokeniser type: {type(tokenizer)}")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -110,12 +213,12 @@ def _evaluate(
         total_tokens += x.numel()
     model.train()
     mean_loss = total_loss / max(total_tokens, 1)
-    return mean_loss, math.exp(mean_loss)
+    return mean_loss, math.exp(min(mean_loss, 20))
 
 
 def _generate_sample(
     model: nn.Module,
-    tokenizer: CharTokenizer,
+    tokenizer: Any,
     prompt: str,
     max_new_tokens: int,
     temperature: float,
@@ -126,9 +229,9 @@ def _generate_sample(
 
     Args:
         model: Trained language model.
-        tokenizer: Fitted :class:`~dataset.tokenizer.CharTokenizer`.
+        tokenizer: Fitted tokeniser (char-level or BPE).
         prompt: Seed text string.
-        max_new_tokens: Number of new characters to generate.
+        max_new_tokens: Tokens to generate.
         temperature: Sampling temperature.
         top_k: Top-k logit filter (0 = disabled).
         device: Inference device.
@@ -137,9 +240,7 @@ def _generate_sample(
         Generated text string (prompt + continuation).
     """
     model.eval()
-    ids = torch.tensor(
-        tokenizer.encode(prompt), dtype=torch.long, device=device
-    ).unsqueeze(0)
+    ids = _encode_prompt(prompt, tokenizer, device)
     out_ids = model.generate(
         ids,
         max_new_tokens=max_new_tokens,
@@ -147,7 +248,7 @@ def _generate_sample(
         top_k=top_k if top_k > 0 else None,
     )
     model.train()
-    return tokenizer.decode(out_ids[0].tolist())
+    return _decode_ids(out_ids[0].tolist(), tokenizer)
 
 
 # ---------------------------------------------------------------------------
@@ -159,52 +260,77 @@ def train_lm(
     cfg: Config,
     baseline: bool = False,
     resume: bool = False,
-    prompt: str = "ROMEO: ",
+    prompt: str | None = None,
     max_new_tokens: int | None = None,
+    max_train_stories: int | None = None,
 ) -> None:
-    """Run the full language-model training loop on Tiny-Shakespeare.
+    """Run the full language-model training loop.
 
     Args:
         cfg: Experiment configuration.
-        baseline: If ``True``, train the standard-residual :class:`~models.BaselineLM`.
+        baseline: If ``True``, train the standard-residual
+            :class:`~models.BaselineLM`.
         resume: If ``True``, resume from ``checkpoints/latest/latest.pt``.
-        prompt: Seed string for per-epoch generation previews.
-        max_new_tokens: Override generation length (uses config value if ``None``).
+        prompt: Seed string for per-epoch generation previews.  Defaults
+            to a dataset-appropriate prompt if ``None``.
+        max_new_tokens: Override generation length (uses config value if
+            ``None``).
+        max_train_stories: Cap TinyStories training split (for fast debugging).
     """
     seed_everything(cfg.training.seed)
     device = resolve_device(cfg.training.device)
-    print(f"Device: {device}")
+    print(f"Device: {device}  |  Dataset: {cfg.data.dataset}")
 
     # ------------------------------------------------------------------ Data
-    loaders, tokenizer = ShakespeareDataset.get_loaders(
-        data_dir=cfg.data.data_dir,
-        seq_len=cfg.data.seq_len,
-        stride=cfg.data.stride,
-        val_split=cfg.data.val_split,
-        batch_size=cfg.training.batch_size,
-        num_workers=cfg.data.num_workers,
-        pin_memory=cfg.data.pin_memory and device.type != "cpu",
-        seed=cfg.training.seed,
+    # Inject max_train_stories into loader kwargs for TinyStories
+    _orig_dataset = cfg.data.dataset
+    loaders, tokenizer = _load_dataset(cfg, device)
+
+    # For TinyStories, re-load with story cap if requested
+    if _orig_dataset.lower() == "tinystories" and max_train_stories is not None:
+        loaders, tokenizer = TinyStoriesDataset.get_loaders(
+            data_dir=cfg.data.data_dir,
+            seq_len=cfg.data.seq_len,
+            stride=cfg.data.stride if cfg.data.stride else None,
+            batch_size=cfg.training.batch_size,
+            num_workers=cfg.data.num_workers,
+            pin_memory=cfg.data.pin_memory and device.type != "cpu",
+            seed=cfg.training.seed,
+            max_train_stories=max_train_stories,
+        )
+
+    vocab_size = (
+        tokenizer.vocab_size if hasattr(tokenizer, "vocab_size") else len(tokenizer)
     )
 
     # ----------------------------------------------------------------- Model
     model = build_lm(
         cfg=cfg.model,
-        vocab_size=tokenizer.vocab_size,
+        vocab_size=vocab_size,
         seq_len=cfg.data.seq_len,
         baseline=baseline,
     ).to(device)
 
     model_name = "BaselineLM" if baseline else cfg.model.name
     print(
-        f"Model: {model_name}  |  "
-        f"params: {model.num_parameters:,}  |  "
-        f"vocab: {tokenizer.vocab_size}"
+        f"Model: {model_name}  |  params: {model.num_parameters:,}  "
+        f"|  vocab: {vocab_size}"
     )
+
+    # Default prompts per dataset
+    if prompt is None:
+        prompt = (
+            "Once upon a time"
+            if cfg.data.dataset.lower() == "tinystories"
+            else "ROMEO: "
+        )
 
     # ------------------------------------------------- Optimiser + scheduler
     optimizer = AdamW(
-        model.parameters(), lr=cfg.training.lr, weight_decay=cfg.training.weight_decay
+        model.parameters(),
+        lr=cfg.training.lr,
+        weight_decay=cfg.training.weight_decay,
+        betas=(0.9, 0.95),  # match TinyStories-33M paper
     )
     total_steps = len(loaders["train"]) * cfg.training.epochs
     scheduler = _build_scheduler(optimizer, cfg.training.warmup_steps, total_steps)
@@ -231,7 +357,9 @@ def train_lm(
         epoch_loss, epoch_tokens = 0.0, 0
 
         pbar = tqdm(
-            loaders["train"], desc=f"Epoch {epoch}/{cfg.training.epochs}", leave=False
+            loaders["train"],
+            desc=f"Epoch {epoch}/{cfg.training.epochs}",
+            leave=False,
         )
         for x, y in pbar:
             x, y = x.to(device), y.to(device)
@@ -257,7 +385,6 @@ def train_lm(
 
             if global_step % cfg.training.log_every == 0:
                 lr = scheduler.get_last_lr()[0]
-                # Log step-level metrics; reuse train_acc field for perplexity (inverted)
                 logger.log_step(
                     epoch=epoch,
                     step=global_step,
@@ -314,7 +441,7 @@ def train_lm(
             device=device,
         )
         print(f"\n{'─'*60}")
-        print(sample[:600])
+        print(sample[:500])
         print(f"{'─'*60}\n")
 
     logger.close()
@@ -328,9 +455,13 @@ def train_lm(
 
 def main() -> None:
     """Parse CLI arguments and launch LM training."""
-    parser = argparse.ArgumentParser(description="Train AttnResLM on Tiny-Shakespeare.")
+    parser = argparse.ArgumentParser(
+        description="Train AttnResLM on Shakespeare or TinyStories."
+    )
     parser.add_argument(
-        "--config", default="config/shakespeare.yaml", help="YAML config path."
+        "--config",
+        default="config/tinystories.yaml",
+        help="YAML config path.",
     )
     parser.add_argument(
         "--override",
@@ -351,7 +482,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--prompt",
-        default="ROMEO: ",
+        default=None,
         help="Seed text for per-epoch generation preview.",
     )
     parser.add_argument(
@@ -359,6 +490,12 @@ def main() -> None:
         type=int,
         default=None,
         help="Override number of generated tokens per preview.",
+    )
+    parser.add_argument(
+        "--max_train_stories",
+        type=int,
+        default=None,
+        help="Cap TinyStories training split (e.g. 50000 for a fast smoke test).",
     )
     args = parser.parse_args()
 
@@ -369,6 +506,7 @@ def main() -> None:
         resume=args.resume,
         prompt=args.prompt,
         max_new_tokens=args.max_new_tokens,
+        max_train_stories=args.max_train_stories,
     )
 
 
