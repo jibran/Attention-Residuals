@@ -1,0 +1,43 @@
+model:
+  name: "AttnResLM_TinyStories"
+  dim: 512
+  depth: 8
+  heads: 8
+  head_dim: 64
+  mlp_multiplier: 4
+  dropout: 0.1
+  use_block_attn_res: true
+  block_size: 4
+  norm_eps: 1.0e-6
+  max_seq_len: 512           # match TinyStories-33M context length
+  use_kv_cache: false        # true enables KV cache at inference; never use during training
+
+training:
+  epochs: 3                  # 3 epochs over 2.12M stories ≈ 6M gradient steps @ bs=32
+  batch_size: 32
+  lr: 5.0e-4                 # matches TinyStories-33M paper lr
+  weight_decay: 0.1          # matches TinyStories-33M paper wd
+  grad_clip: 1.0
+  warmup_steps: 500
+  log_every: 200
+  save_every: 1
+  seed: 42
+  device: "auto"
+
+data:
+  dataset: "tinystories"
+  data_dir: "data/"
+  seq_len: 512
+  stride: 512                # non-overlapping (same as original training)
+  num_workers: 4
+  pin_memory: true
+  val_split: 0.0             # TinyStories has its own validation split; unused here
+
+generation:
+  max_new_tokens: 300
+  temperature: 0.8
+  top_k: 40
+
+logging:
+  log_dir: "logs/"
+  checkpoint_dir: "checkpoints/"

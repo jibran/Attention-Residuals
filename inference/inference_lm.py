@@ -1,27 +1,27 @@
-"""Language-model inference: generate Shakespeare text from a checkpoint.
+"""Language-model inference: generate text and evaluate perplexity.
 
-Loads a trained :class:`~models.AttnResLM` (or :class:`~models.BaselineLM`)
-and generates text autoregressively from a user-supplied prompt.
+Supports both the character-level Shakespeare model and the BPE TinyStories
+model.  The dataset type is detected automatically from the saved config.
 
 Usage::
 
-    # Generate 500 characters from the best checkpoint:
+    # Generate text (TinyStories):
     python inference/inference_lm.py \\
         --checkpoint checkpoints/best/best.pt \\
-        --prompt "HAMLET: To be, or not"
+        --prompt "Once upon a time"
 
-    # Adjust temperature and length:
-    python inference/inference_lm.py \\
-        --checkpoint checkpoints/best/best.pt \\
-        --prompt "KING LEAR:" \\
-        --max_new_tokens 800 \\
-        --temperature 0.6 \\
-        --top_k 50
-
-    # Evaluate perplexity on the test split:
+    # Evaluate val-set perplexity:
     python inference/inference_lm.py \\
         --checkpoint checkpoints/best/best.pt \\
         --eval
+
+    # Override sampling parameters:
+    python inference/inference_lm.py \\
+        --checkpoint checkpoints/best/best.pt \\
+        --prompt "Once upon a time" \\
+        --max_new_tokens 400 \\
+        --temperature 0.7 \\
+        --top_k 50
 """
 
 from __future__ import annotations
@@ -30,13 +30,12 @@ import argparse
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch
 
-from dataset.shakespeare_dataset import ShakespeareDataset
-from dataset.tokenizer import CharTokenizer
 from models.lm_transformer import AttnResLM, BaselineLM
 from utils.config import (
     Config,
@@ -90,62 +89,130 @@ def _rebuild_config(ckpt_dict: dict) -> Config:
     )
 
 
-def _load_tokenizer(cfg: Config) -> CharTokenizer:
-    """Load the tokeniser that was saved during training.
+def _load_tokenizer(cfg: Config) -> Any:
+    """Load the tokeniser that matches the checkpoint's dataset.
+
+    For Shakespeare: loads the ``CharTokenizer`` from ``vocab.json``.
+    For TinyStories: loads the ``EleutherAI/gpt-neo-125M`` HF tokeniser.
 
     Args:
-        cfg: Config containing the data directory path.
+        cfg: Config containing dataset name and data directory.
 
     Returns:
-        Fitted :class:`~dataset.tokenizer.CharTokenizer`.
-
-    Raises:
-        FileNotFoundError: If the vocabulary file has not been created yet.
+        Fitted tokeniser (``CharTokenizer`` or HuggingFace tokeniser).
     """
-    vocab_path = Path(cfg.data.data_dir) / "processed" / "vocab.json"
-    return CharTokenizer.load(vocab_path)
+    dataset = cfg.data.dataset.lower()
+    if dataset == "shakespeare":
+        from dataset.tokenizer import CharTokenizer
+
+        vocab_path = Path(cfg.data.data_dir) / "processed" / "vocab.json"
+        return CharTokenizer.load(vocab_path)
+
+    if dataset == "tinystories":
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained("EleutherAI/gpt-neo-125M")
+        if tok.pad_token is None:
+            tok.pad_token = tok.eos_token
+        return tok
+
+    raise ValueError(f"Unknown dataset '{cfg.data.dataset}' in checkpoint config.")
+
+
+def _encode(prompt: str, tokenizer: Any, device: torch.device) -> torch.Tensor:
+    """Encode a prompt string to a ``(1, T)`` token-id tensor.
+
+    Args:
+        prompt: Seed text string.
+        tokenizer: Fitted tokeniser.
+        device: Target device.
+
+    Returns:
+        Token ids tensor ``(1, T)``.
+    """
+    if hasattr(tokenizer, "input_ids"):
+        # HF tokeniser with return_tensors
+        return tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+    # Both CharTokenizer.encode and HF tokeniser.encode return a list of ints
+    ids = tokenizer.encode(prompt)
+    if isinstance(ids, list):
+        return torch.tensor(ids, dtype=torch.long, device=device).unsqueeze(0)
+    return ids.to(device)
+
+
+def _decode(ids: list[int], tokenizer: Any) -> str:
+    """Decode a list of token ids to a string.
+
+    Args:
+        ids: List of integer token ids.
+        tokenizer: Fitted tokeniser.
+
+    Returns:
+        Decoded text string.
+    """
+    return tokenizer.decode(ids)
 
 
 @torch.no_grad()
 def _evaluate_perplexity(
     model: torch.nn.Module,
     cfg: Config,
-    tokenizer: CharTokenizer,
+    tokenizer: Any,
     device: torch.device,
     batch_size: int = 32,
 ) -> tuple[float, float]:
-    """Compute loss and perplexity on the Shakespeare test split.
+    """Compute loss and perplexity on the dataset's validation split.
 
     Args:
         model: Language model in eval mode.
-        cfg: Experiment config (for data settings).
+        cfg: Experiment config.
         tokenizer: Fitted tokeniser.
         device: Inference device.
-        batch_size: Batch size for the test loader.
+        batch_size: Batch size for the eval loader.
 
     Returns:
         Tuple ``(mean_loss, perplexity)``.
     """
-    loaders, _ = ShakespeareDataset.get_loaders(
-        data_dir=cfg.data.data_dir,
-        seq_len=cfg.data.seq_len,
-        stride=cfg.data.seq_len,  # non-overlapping for eval
-        val_split=0.0,
-        batch_size=batch_size,
-        num_workers=0,
-        pin_memory=False,
-        seed=0,
-    )
-    loader = loaders["test"]
-    total_loss, total_tokens = 0.0, 0
+    dataset = cfg.data.dataset.lower()
+    if dataset == "shakespeare":
+        from dataset.shakespeare_dataset import ShakespeareDataset
+
+        loaders, _ = ShakespeareDataset.get_loaders(
+            data_dir=cfg.data.data_dir,
+            seq_len=cfg.data.seq_len,
+            stride=cfg.data.seq_len,
+            val_split=0.1,
+            batch_size=batch_size,
+            num_workers=0,
+            pin_memory=False,
+            seed=0,
+        )
+        loader = loaders["val"]
+    elif dataset == "tinystories":
+        from dataset.tinystories_dataset import TinyStoriesDataset
+
+        loaders, _ = TinyStoriesDataset.get_loaders(
+            data_dir=cfg.data.data_dir,
+            seq_len=cfg.data.seq_len,
+            stride=cfg.data.seq_len,
+            batch_size=batch_size,
+            num_workers=0,
+            pin_memory=False,
+            seed=0,
+        )
+        loader = loaders["val"]
+    else:
+        raise ValueError(f"Unknown dataset '{cfg.data.dataset}'.")
+
     model.eval()
+    total_loss, total_tokens = 0.0, 0
     for x, y in loader:
         x, y = x.to(device), y.to(device)
         _, loss = model(x, y)
         total_loss += loss.item() * x.numel()
         total_tokens += x.numel()
     mean_loss = total_loss / max(total_tokens, 1)
-    return mean_loss, math.exp(mean_loss)
+    return mean_loss, math.exp(min(mean_loss, 20))
 
 
 # ---------------------------------------------------------------------------
@@ -156,12 +223,12 @@ def _evaluate_perplexity(
 def main() -> None:
     """Parse CLI arguments and run LM inference / generation."""
     parser = argparse.ArgumentParser(
-        description="Generate Shakespeare text with AttnResLM."
+        description="Generate text / evaluate perplexity with AttnResLM."
     )
     parser.add_argument(
         "--checkpoint", required=True, help="Path to .pt checkpoint file."
     )
-    parser.add_argument("--prompt", default="ROMEO: ", help="Seed text for generation.")
+    parser.add_argument("--prompt", default=None, help="Seed text for generation.")
     parser.add_argument(
         "--max_new_tokens", type=int, default=None, help="Tokens to generate."
     )
@@ -170,7 +237,12 @@ def main() -> None:
     )
     parser.add_argument("--top_k", type=int, default=None, help="Top-k filter.")
     parser.add_argument(
-        "--eval", action="store_true", help="Compute test-set perplexity."
+        "--use_kv_cache",
+        action="store_true",
+        help="Enable KV-cache for faster generation.",
+    )
+    parser.add_argument(
+        "--eval", action="store_true", help="Compute validation-set perplexity."
     )
     parser.add_argument("--device", default="auto", help="Device override.")
     args = parser.parse_args()
@@ -180,11 +252,13 @@ def main() -> None:
     cfg = _rebuild_config(ckpt)
     tok = _load_tokenizer(cfg)
 
+    vocab_size = tok.vocab_size if hasattr(tok, "vocab_size") else len(tok)
+
     # Build model and load weights
     is_baseline = "Baseline" in ckpt.get("config", {}).get("model", {}).get("name", "")
     model_cls = BaselineLM if is_baseline else AttnResLM
     model = model_cls(
-        cfg=cfg.model, vocab_size=tok.vocab_size, seq_len=cfg.data.seq_len
+        cfg=cfg.model, vocab_size=vocab_size, seq_len=cfg.data.seq_len
     ).to(device)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
@@ -192,31 +266,34 @@ def main() -> None:
     epoch = ckpt.get("epoch", "?")
     val_loss = ckpt.get("val_loss", float("nan"))
     print(
-        f"Loaded checkpoint — epoch {epoch}  val_loss {val_loss:.4f}"
-        f"  ppl {math.exp(min(val_loss, 20)):.1f}"
+        f"Loaded checkpoint — epoch {epoch}  "
+        f"val_loss {val_loss:.4f}  ppl {math.exp(min(val_loss, 20)):.1f}"
     )
-    print(f"Vocab size: {tok.vocab_size}  |  Params: {model.num_parameters:,}\n")
+    print(f"Vocab size: {vocab_size}  |  Params: {model.num_parameters:,}\n")
 
     # --- Perplexity evaluation
     if args.eval:
         loss, ppl = _evaluate_perplexity(model, cfg, tok, device)
-        print(f"Test — loss: {loss:.4f}  perplexity: {ppl:.2f}\n")
+        print(f"Val — loss: {loss:.4f}  perplexity: {ppl:.2f}\n")
 
     # --- Text generation
     temperature = args.temperature or cfg.generation.temperature
     top_k = args.top_k if args.top_k is not None else cfg.generation.top_k
     max_new_tok = args.max_new_tokens or cfg.generation.max_new_tokens
+    prompt = args.prompt or (
+        "Once upon a time" if cfg.data.dataset.lower() == "tinystories" else "ROMEO: "
+    )
+    use_cache = args.use_kv_cache or cfg.model.use_kv_cache
 
-    prompt_ids = torch.tensor(
-        tok.encode(args.prompt), dtype=torch.long, device=device
-    ).unsqueeze(0)
+    prompt_ids = _encode(prompt, tok, device)
     out_ids = model.generate(
         prompt_ids,
         max_new_tokens=max_new_tok,
         temperature=temperature,
         top_k=top_k if top_k > 0 else None,
+        use_kv_cache=use_cache,
     )
-    generated = tok.decode(out_ids[0].tolist())
+    generated = _decode(out_ids[0].tolist(), tok)
 
     print("─" * 60)
     print(generated)
