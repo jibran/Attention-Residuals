@@ -34,6 +34,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import time
+
 import torch
 
 from models.lm_transformer import AttnResLM, BaselineLM
@@ -273,8 +275,10 @@ def main() -> None:
 
     # --- Perplexity evaluation
     if args.eval:
+        t_eval0 = time.perf_counter()
         loss, ppl = _evaluate_perplexity(model, cfg, tok, device)
-        print(f"Val — loss: {loss:.4f}  perplexity: {ppl:.2f}\n")
+        eval_time_s = time.perf_counter() - t_eval0
+        print(f"Val — loss: {loss:.4f}  perplexity: {ppl:.2f}  ({eval_time_s:.1f}s)\n")
 
     # --- Text generation
     temperature = args.temperature or cfg.generation.temperature
@@ -286,6 +290,10 @@ def main() -> None:
     use_cache = args.use_kv_cache or cfg.model.use_kv_cache
 
     prompt_ids = _encode(prompt, tok, device)
+    prompt_len = prompt_ids.shape[1]
+    cache_label = "KV-cache" if use_cache else "no cache"
+
+    t0 = time.perf_counter()
     out_ids = model.generate(
         prompt_ids,
         max_new_tokens=max_new_tok,
@@ -293,11 +301,20 @@ def main() -> None:
         top_k=top_k if top_k > 0 else None,
         use_kv_cache=use_cache,
     )
+    gen_time_s = time.perf_counter() - t0
+    new_tokens = out_ids.shape[1] - prompt_len
+    tok_per_sec = new_tokens / max(gen_time_s, 1e-9)
+    ms_per_tok = gen_time_s * 1000 / max(new_tokens, 1)
+
     generated = _decode(out_ids[0].tolist(), tok)
 
     print("─" * 60)
     print(generated)
     print("─" * 60)
+    print(
+        f"Generated {new_tokens} tokens in {gen_time_s:.2f}s  "
+        f"({tok_per_sec:.1f} tok/s  {ms_per_tok:.1f} ms/tok)  [{cache_label}]"
+    )
 
 
 if __name__ == "__main__":

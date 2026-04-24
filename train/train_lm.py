@@ -44,6 +44,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import time
+
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
@@ -361,6 +363,11 @@ def train_lm(
     model.train()
     for epoch in range(start_epoch + 1, cfg.training.epochs + 1):
         epoch_loss, epoch_tokens = 0.0, 0
+        # Timing accumulators for the current log_every window
+        _window_tokens = 0
+        _window_steps = 0
+        _window_t0 = time.time()
+        _epoch_t0 = time.time()
 
         pbar = tqdm(
             loaders["train"],
@@ -369,6 +376,7 @@ def train_lm(
         )
         for x, y in pbar:
             x, y = x.to(device), y.to(device)
+            _batch_tokens = x.numel()
 
             optimizer.zero_grad()
             _, loss = model(x, y)
@@ -380,9 +388,10 @@ def train_lm(
             optimizer.step()
             scheduler.step()
             global_step += 1
-
-            epoch_loss += loss.item() * x.numel()
-            epoch_tokens += x.numel()
+            epoch_loss += loss.item() * _batch_tokens
+            epoch_tokens += _batch_tokens
+            _window_tokens += _batch_tokens
+            _window_steps += 1
 
             pbar.set_postfix(
                 loss=f"{loss.item():.4f}",
@@ -391,25 +400,38 @@ def train_lm(
 
             if global_step % cfg.training.log_every == 0:
                 lr = scheduler.get_last_lr()[0]
+                _elapsed_w = time.time() - _window_t0
+                _tps = _window_tokens / max(_elapsed_w, 1e-9)
+                _sms = (_elapsed_w / max(_window_steps, 1)) * 1000
                 logger.log_step(
                     epoch=epoch,
                     step=global_step,
                     train_loss=loss.item(),
                     train_acc=1.0 / max(math.exp(min(loss.item(), 20)), 1),
                     lr=lr,
+                    tokens_per_sec=_tps,
+                    step_ms=_sms,
                 )
+                # Reset window
+                _window_tokens = 0
+                _window_steps = 0
+                _window_t0 = time.time()
+
+        epoch_time_s = time.time() - _epoch_t0
 
         # -------------------------------------------------------------- Val
         val_loss, val_ppl = _evaluate(model, loaders["val"], device)
         train_loss = epoch_loss / max(epoch_tokens, 1)
         train_ppl = math.exp(min(train_loss, 20))
         lr_now = scheduler.get_last_lr()[0]
+        epoch_tps = epoch_tokens / max(epoch_time_s, 1e-9)
 
         print(
             f"\nEpoch {epoch} | "
             f"train loss {train_loss:.4f}  ppl {train_ppl:.1f} | "
             f"val loss {val_loss:.4f}  ppl {val_ppl:.1f} | "
-            f"lr {lr_now:.2e}"
+            f"lr {lr_now:.2e} | "
+            f"{epoch_time_s:.0f}s  {epoch_tps/1000:.1f}k tok/s"
         )
 
         logger.log_epoch(
@@ -420,6 +442,7 @@ def train_lm(
             val_loss=val_loss,
             val_acc=1.0 / max(val_ppl, 1),
             lr=lr_now,
+            epoch_time_s=epoch_time_s,
         )
 
         # -------------------------------------------- Checkpoint

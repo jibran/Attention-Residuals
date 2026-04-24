@@ -435,3 +435,55 @@ class TestTrainingLoggerWithTracker:
         _, kwargs = tracker.log_metrics.call_args.args[0], tracker.log_metrics.call_args
         assert kwargs.kwargs.get("step") == 42 or kwargs.args[1] == 42
         logger.close()
+
+    def test_tokens_per_sec_forwarded_to_tracker(self, tmp_path):
+        """log_step with tokens_per_sec must forward it to the tracker."""
+        tracker = MagicMock(spec=ExperimentTracker)
+        tracker.is_active = True
+        logger = TrainingLogger(log_dir=tmp_path, model_name="test", tracker=tracker)
+        logger.log_step(
+            epoch=1,
+            step=10,
+            train_loss=0.5,
+            train_acc=0.8,
+            lr=1e-3,
+            tokens_per_sec=50_000.0,
+            step_ms=20.0,
+        )
+        metrics = tracker.log_metrics.call_args.args[0]
+        assert "train/tokens_per_sec" in metrics
+        assert metrics["train/tokens_per_sec"] == pytest.approx(50_000.0)
+        assert "train/step_ms" in metrics
+        assert metrics["train/step_ms"] == pytest.approx(20.0)
+        logger.close()
+
+    def test_epoch_time_s_forwarded_to_tracker(self, tmp_path):
+        """log_epoch with epoch_time_s must forward it to the tracker."""
+        tracker = MagicMock(spec=ExperimentTracker)
+        tracker.is_active = True
+        logger = TrainingLogger(log_dir=tmp_path, model_name="test", tracker=tracker)
+        logger.log_epoch(
+            epoch=1,
+            step=100,
+            train_loss=0.4,
+            train_acc=0.85,
+            val_loss=0.35,
+            val_acc=0.90,
+            lr=1e-3,
+            epoch_time_s=90.5,
+        )
+        metrics = tracker.log_metrics.call_args.args[0]
+        assert "epoch/epoch_time_s" in metrics
+        assert metrics["epoch/epoch_time_s"] == pytest.approx(90.5)
+        logger.close()
+
+    def test_optional_timing_not_forwarded_when_none(self, tmp_path):
+        """Omitting timing args must not forward those keys to the tracker."""
+        tracker = MagicMock(spec=ExperimentTracker)
+        tracker.is_active = True
+        logger = TrainingLogger(log_dir=tmp_path, model_name="test", tracker=tracker)
+        logger.log_step(epoch=1, step=5, train_loss=0.5, train_acc=0.8, lr=1e-3)
+        metrics = tracker.log_metrics.call_args.args[0]
+        assert "train/tokens_per_sec" not in metrics
+        assert "train/step_ms" not in metrics
+        logger.close()
