@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  attnres-chat:
+    build:
+      context: ..          # project root so COPY ../models works in Dockerfile
+      dockerfile: frontend/Dockerfile
+    image: ${IMAGE_NAME:-attnres-chat}:${IMAGE_TAG:-latest}
+    container_name: attnres-chat
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    volumes:
+      # Mount the checkpoints directory from the host.
+      # Override CHECKPOINTS_DIR to point at your trained model files.
+      - "${CHECKPOINTS_DIR:-../checkpoints}:/checkpoints:ro"
+    environment:
+      # ── Server ──────────────────────────────────────────────────────────
+      ATTNRES_HOST: "0.0.0.0"
+      ATTNRES_PORT: "8080"
+      ATTNRES_WORKERS: "${WORKERS:-1}"
+      ATTNRES_LOG_LEVEL: "${LOG_LEVEL:-info}"
+
+      # ── Paths ────────────────────────────────────────────────────────────
+      ATTNRES_CHECKPOINTS_DIR: "/checkpoints"
+      ATTNRES_ATTNRES_SRC_DIR: "/app"
+
+      # ── Inference ────────────────────────────────────────────────────────
+      ATTNRES_DEVICE: "${DEVICE:-auto}"
+      ATTNRES_MAX_NEW_TOKENS_LIMIT: "${MAX_NEW_TOKENS_LIMIT:-1024}"
+
+      # ── Auth (CHANGE THESE IN PRODUCTION) ────────────────────────────────
+      ATTNRES_AUTH_USERNAME:      "${AUTH_USERNAME:-admin}"
+      ATTNRES_AUTH_PASSWORD:      "${AUTH_PASSWORD:-changeme}"
+      ATTNRES_AUTH_PASSWORD_HASH: "${AUTH_PASSWORD_HASH:-}"
+      ATTNRES_SECRET_KEY:         "${SECRET_KEY:-CHANGE-THIS-IN-PRODUCTION}"
+      ATTNRES_SESSION_EXPIRE_MINUTES: "${SESSION_EXPIRE_MINUTES:-480}"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/version')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
