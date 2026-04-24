@@ -2,10 +2,12 @@
 
 Provides:
 
-* :class:`RMSNorm`          — Root-mean-square layer normalisation.
-* :class:`SwiGLU`           — SwiGLU feed-forward block (Llama-style MLP).
-* :class:`RotaryEmbedding`  — Rotary position embeddings (RoPE).
-* :class:`CausalSelfAttention` — Multi-head causal self-attention with RoPE.
+* :class:`RMSNorm`             — Root-mean-square layer normalisation.
+* :class:`SwiGLU`              — SwiGLU feed-forward block (Llama-style MLP).
+* :class:`RotaryEmbedding`     — Rotary position embeddings (RoPE).
+* :class:`KVCache`             — Per-layer key/value cache for autoregressive inference.
+* :class:`CausalSelfAttention` — Multi-head causal self-attention with RoPE and
+                                  optional KV-cache support.
 
 All modules follow the Google docstring convention and are written to be
 framework-agnostic beyond requiring PyTorch >= 2.0.
@@ -13,7 +15,6 @@ framework-agnostic beyond requiring PyTorch >= 2.0.
 
 from __future__ import annotations
 
-import math
 from typing import Optional
 
 import torch
@@ -154,25 +155,133 @@ class RotaryEmbedding(nn.Module):
         return torch.cat([-x2, x1], dim=-1)
 
     def forward(
-        self, q: torch.Tensor, k: torch.Tensor
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        offset: int = 0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Apply RoPE to query and key tensors.
 
         Args:
-            q: Query tensor ``(B, n_heads, T, head_dim)``.
-            k: Key tensor   ``(B, n_heads, T, head_dim)``.
+            q: Query tensor ``(B, n_heads, T_q, head_dim)``.
+            k: Key tensor   ``(B, n_heads, T_k, head_dim)``.
+            offset: Starting position index.  During cached inference this is
+                the number of tokens already in the KV cache, so that new
+                tokens receive correct absolute position encodings.
 
         Returns:
             Tuple ``(q_rot, k_rot)`` with rotations applied; same shapes.
         """
-        T = q.shape[2]
-        if T > self.cos_cache.shape[0]:
-            self._build_cache(T)
-        cos = self.cos_cache[:T].unsqueeze(0).unsqueeze(0)  # (1,1,T,D)
-        sin = self.sin_cache[:T].unsqueeze(0).unsqueeze(0)
-        q_rot = q * cos + self._rotate_half(q) * sin
-        k_rot = k * cos + self._rotate_half(k) * sin
+        T_q = q.shape[2]
+        T_k = k.shape[2]
+        max_pos = offset + max(T_q, T_k)
+        if max_pos > self.cos_cache.shape[0]:
+            self._build_cache(max_pos)
+
+        # Positions for new keys/queries start at `offset`
+        cos_q = self.cos_cache[offset : offset + T_q].unsqueeze(0).unsqueeze(0)
+        sin_q = self.sin_cache[offset : offset + T_q].unsqueeze(0).unsqueeze(0)
+        cos_k = self.cos_cache[offset : offset + T_k].unsqueeze(0).unsqueeze(0)
+        sin_k = self.sin_cache[offset : offset + T_k].unsqueeze(0).unsqueeze(0)
+
+        q_rot = q * cos_q + self._rotate_half(q) * sin_q
+        k_rot = k * cos_k + self._rotate_half(k) * sin_k
         return q_rot, k_rot
+
+
+# ---------------------------------------------------------------------------
+# KV Cache
+# ---------------------------------------------------------------------------
+
+
+class KVCache:
+    """Per-layer key/value cache for autoregressive inference.
+
+    During autoregressive decoding, re-computing keys and values for all
+    previously seen tokens at every new step is redundant.  :class:`KVCache`
+    stores the accumulated ``(k, v)`` tensors for one attention layer and
+    appends new entries at each decode step.
+
+    A :class:`KVCache` instance is **not** an ``nn.Module``; it carries no
+    learnable parameters and is never serialised in checkpoints.  It lives only
+    for the duration of a single generation call and must be reset between
+    independent sequences.
+
+    Attributes:
+        k_cache: Accumulated key tensor   ``(B, n_heads, T_cached, head_dim)``
+            or ``None`` before the first update.
+        v_cache: Accumulated value tensor ``(B, n_heads, T_cached, head_dim)``
+            or ``None`` before the first update.
+
+    Example::
+
+        cache = KVCache()
+        # --- decode step 1 ---
+        k_full, v_full = cache.update(k_new, v_new)   # k_full == k_new (T_cached=0)
+        # --- decode step 2 ---
+        k_full, v_full = cache.update(k_new2, v_new2) # k_full has T=2
+        cache.clear()   # reset between sequences
+    """
+
+    def __init__(self) -> None:
+        self.k_cache: Optional[torch.Tensor] = None
+        self.v_cache: Optional[torch.Tensor] = None
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def length(self) -> int:
+        """Number of token positions currently stored in the cache.
+
+        Returns:
+            Cached sequence length (0 when cache is empty).
+        """
+        return 0 if self.k_cache is None else self.k_cache.shape[2]
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def update(
+        self,
+        k_new: torch.Tensor,
+        v_new: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Append new keys/values and return the full accumulated tensors.
+
+        The new tensors are concatenated along the sequence dimension (dim=2)
+        with any previously cached entries.
+
+        Args:
+            k_new: New key tensor   ``(B, n_heads, T_new, head_dim)``.
+            v_new: New value tensor ``(B, n_heads, T_new, head_dim)``.
+
+        Returns:
+            Tuple ``(k_full, v_full)`` containing all cached tokens including
+            the new ones, each of shape ``(B, n_heads, T_cached + T_new, head_dim)``.
+        """
+        if self.k_cache is None:
+            self.k_cache = k_new
+            self.v_cache = v_new
+        else:
+            self.k_cache = torch.cat([self.k_cache, k_new], dim=2)
+            self.v_cache = torch.cat([self.v_cache, v_new], dim=2)
+        return self.k_cache, self.v_cache
+
+    def clear(self) -> None:
+        """Reset the cache, discarding all stored keys and values.
+
+        Call between independent generation sequences to prevent cross-
+        contamination.
+        """
+        self.k_cache = None
+        self.v_cache = None
+
+    def reset(self) -> None:
+        """Alias for :meth:`clear`. Discards all stored keys and values."""
+        self.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +290,27 @@ class RotaryEmbedding(nn.Module):
 
 
 class CausalSelfAttention(nn.Module):
-    """Multi-head causal self-attention with RoPE.
+    """Multi-head causal self-attention with RoPE and optional KV-cache.
 
     Uses :func:`torch.nn.functional.scaled_dot_product_attention` (Flash
-    Attention when available via PyTorch 2.x) with ``is_causal=True``.
+    Attention when available via PyTorch 2.x).
+
+    KV-cache behaviour
+    ------------------
+    When a :class:`KVCache` is supplied to :meth:`forward`:
+
+    * Only the **new** token(s) in ``x`` are projected to Q, K, V.
+    * The new K and V are appended to the cache via :meth:`KVCache.update`.
+    * Attention is computed with Q over the **full** accumulated K/V history.
+    * RoPE is applied with the correct position offset so that new tokens
+      receive absolute positions ``[cache.length, cache.length + T_new)``.
+    * ``is_causal=False`` is passed to SDPA because the causal mask is already
+      implicit: Q only attends to cached tokens from earlier steps plus itself,
+      and ``scaled_dot_product_attention`` would otherwise mask out valid cached
+      positions.
+
+    The cache is **never** used during training (``model.training == True``).
+    Pass ``kv_cache=None`` (the default) for all training and prefill steps.
 
     Args:
         dim: Model hidden dimension.
@@ -212,22 +338,58 @@ class CausalSelfAttention(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.rope = RotaryEmbedding(head_dim, max_seq_len)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Compute causal self-attention.
+    def forward(
+        self,
+        x: torch.Tensor,
+        kv_cache: Optional[KVCache] = None,
+    ) -> torch.Tensor:
+        """Compute causal self-attention, optionally with a KV cache.
 
         Args:
-            x: Input tensor ``(B, T, dim)``.
+            x: Input tensor ``(B, T, dim)``.  During cached decoding ``T``
+                is typically 1 (one new token per step).
+            kv_cache: Optional :class:`KVCache` instance for this layer.
+                When provided and ``not self.training``, new K/V are appended
+                to the cache and attention spans the full history.  Ignored
+                (treated as ``None``) during training.
 
         Returns:
             Output tensor ``(B, T, dim)``.
         """
         B, T, _ = x.shape
-        qkv = self.qkv(x).chunk(3, dim=-1)  # 3 × (B,T,inner)
-        q, k, v = (t.view(B, T, self.heads, self.head_dim).transpose(1, 2) for t in qkv)
-        q, k = self.rope(q, k)
 
-        out = F.scaled_dot_product_attention(
-            q, k, v, dropout_p=self.drop.p if self.training else 0.0, is_causal=True
-        )
+        # Project to Q, K, V for the *new* tokens only
+        qkv = self.qkv(x).chunk(3, dim=-1)  # 3 × (B, T, inner)
+        q, k, v = (t.view(B, T, self.heads, self.head_dim).transpose(1, 2) for t in qkv)
+
+        use_cache = kv_cache is not None
+
+        if use_cache:
+            # Apply RoPE with the current cache offset so new tokens get the
+            # correct absolute positions.
+            offset = kv_cache.length
+            q, k = self.rope(q, k, offset=offset)
+            # Append to cache; k_full / v_full span [0, offset + T)
+            k_full, v_full = kv_cache.update(k, v)
+            # Q attends over the full history — causal mask is already implicit
+            # (Q positions are all >= any cached K position), so is_causal=False.
+            out = F.scaled_dot_product_attention(
+                q,
+                k_full,
+                v_full,
+                dropout_p=0.0,
+                is_causal=False,
+            )
+        else:
+            # Standard path: full-sequence causal attention (training + prefill)
+            q, k = self.rope(q, k, offset=0)
+            out = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                dropout_p=self.drop.p if self.training else 0.0,
+                is_causal=True,
+            )
+
         out = out.transpose(1, 2).contiguous().view(B, T, -1)
         return self.proj(out)

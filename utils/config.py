@@ -42,6 +42,11 @@ class ModelConfig:
         block_size: Number of transformer layers per block (Block AttnRes only).
         norm_eps: Epsilon for RMSNorm.
         max_seq_len: Maximum sequence length (used for positional embeddings).
+        use_kv_cache: If True, :class:`~models.components.CausalSelfAttention`
+            accepts an optional :class:`~models.components.KVCache` during inference,
+            avoiding re-computation of past keys and values.  Must be False
+            during training.  Enable via model.use_kv_cache: true in YAML or
+            --override model.use_kv_cache=true at the CLI.
     """
 
     name: str = "AttnResTransformer"
@@ -55,6 +60,7 @@ class ModelConfig:
     block_size: int = 4
     norm_eps: float = 1e-6
     max_seq_len: int = 512
+    use_kv_cache: bool = False
 
 
 @dataclass
