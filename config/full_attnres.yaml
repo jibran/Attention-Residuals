@@ -26,10 +26,15 @@ training:
 data:
   dataset: "mnist"
   data_dir: "data/"
-  num_workers: 2
+  num_workers: 4
   pin_memory: true
   val_split: 0.1
 
 logging:
+  tracker: none              # none | wandb | mlflow
+  wandb_project: attnres     # W&B project name (tracker: wandb)
+  wandb_run_name: ""         # leave empty to auto-generate
+  mlflow_tracking_uri: mlruns  # local path or http://host:port
+  mlflow_experiment: AttnRes   # MLflow experiment name
   log_dir: "logs/"
   checkpoint_dir: "checkpoints/"

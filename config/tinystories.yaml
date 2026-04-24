@@ -39,5 +39,10 @@ generation:
   top_k: 40
 
 logging:
+  tracker: none              # none | wandb | mlflow
+  wandb_project: attnres     # W&B project name (tracker: wandb)
+  wandb_run_name: ""         # leave empty to auto-generate
+  mlflow_tracking_uri: mlruns  # local path or http://host:port
+  mlflow_experiment: AttnRes   # MLflow experiment name
   log_dir: "logs/"
   checkpoint_dir: "checkpoints/"

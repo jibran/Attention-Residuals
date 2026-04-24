@@ -56,6 +56,7 @@ from dataset.tinystories_dataset import TinyStoriesDataset
 from models import build_lm
 from utils import (
     CheckpointManager,
+    ExperimentTracker,
     TrainingLogger,
     load_config,
     resolve_device,
@@ -336,7 +337,12 @@ def train_lm(
     scheduler = _build_scheduler(optimizer, cfg.training.warmup_steps, total_steps)
 
     # ------------------------------------------ Logger + checkpoint manager
-    logger = TrainingLogger(log_dir=cfg.logging.log_dir, model_name=model_name)
+    tracker = ExperimentTracker.from_config(
+        cfg, run_name=model_name, config_dict=cfg.to_dict()
+    )
+    logger = TrainingLogger(
+        log_dir=cfg.logging.log_dir, model_name=model_name, tracker=tracker
+    )
     ckpt_mgr = CheckpointManager(checkpoint_dir=cfg.logging.checkpoint_dir, config=cfg)
 
     start_epoch, global_step = 0, 0
@@ -445,6 +451,11 @@ def train_lm(
         print(f"{'─'*60}\n")
 
     logger.close()
+    # Upload best checkpoint to the tracker artifact store
+    best_ckpt = Path(cfg.logging.checkpoint_dir) / "best" / "best.pt"
+    if best_ckpt.exists():
+        tracker.log_artifact(best_ckpt)
+    tracker.finish()
     print("Training complete.")
 
 
