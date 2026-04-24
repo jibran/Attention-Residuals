@@ -187,6 +187,7 @@ class AttnResTransformerLayer(nn.Module):
         use_block_attn_res: bool = True,
         norm_eps: float = 1e-6,
         use_kv_cache: bool = False,
+        use_xsa: bool = False,
     ) -> None:
         super().__init__()
         self.use_kv_cache = use_kv_cache
@@ -199,7 +200,9 @@ class AttnResTransformerLayer(nn.Module):
         self.mlp_norm = RMSNorm(dim, eps=norm_eps)
 
         # Sub-layers
-        self.attn = CausalSelfAttention(dim, heads, head_dim, max_seq_len, dropout)
+        self.attn = CausalSelfAttention(
+            dim, heads, head_dim, max_seq_len, dropout, use_xsa=use_xsa
+        )
         self.mlp = SwiGLU(dim, hidden_dim=dim * mlp_multiplier, dropout=dropout)
 
         # AttnRes ops (one before attn, one before MLP)

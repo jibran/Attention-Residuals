@@ -47,6 +47,14 @@ class ModelConfig:
             avoiding re-computation of past keys and values.  Must be False
             during training.  Enable via model.use_kv_cache: true in YAML or
             --override model.use_kv_cache=true at the CLI.
+        use_xsa: If ``True``, apply Exclusive Self Attention (XSA) after the
+            standard attention aggregation.  XSA removes the projection of each
+            attention output ``y_i`` onto its own normalised value vector
+            ``v̂_i``, eliminating the *attention similarity bias* and forcing
+            the attention layer to capture only contextual information that is
+            orthogonal to the token's own representation.  Compatible with KV
+            cache, Block AttnRes, and Full AttnRes.  Introduces negligible
+            overhead.  Reference: Zhai (2026), arXiv:2603.09078.
     """
 
     name: str = "AttnResTransformer"
@@ -61,6 +69,7 @@ class ModelConfig:
     norm_eps: float = 1e-6
     max_seq_len: int = 512
     use_kv_cache: bool = False
+    use_xsa: bool = False
 
 
 @dataclass
